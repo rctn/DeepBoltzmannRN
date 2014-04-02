@@ -25,9 +25,31 @@ class sdbm(object):
     def train(self,data):
         pass
 
-    def mpfTrain(self,states,steps):
+    def ddiff(self,state,layer,position):
         pass
-    
+    def ediff(self,state,layer,position):
+        pass
+
+    def mpfTrain(self,vis,steps,eps,stepsSample):
+        nData = vis.shape[0]
+        fullState = np.array([self.sampleHidden(vis1,stepsSample) for vis1 in vis])
+        for ii in xrange(steps):
+            dw = np.zeros_like(self.weights)
+            db = np.zeros_like(self.bias)
+            #update weights and biases
+            for state in fullState:
+                #for visible
+                for kk in xrange(npl):
+                    db[0] += ddiff(state,0,npl)*np.exp(.5*(ediff(state,0,npl))
+                for jj in xrange(layers-1):
+                    for kk in xrange(npl):
+                        dw[jj] +=
+                        dw[jj] +=
+                        db[jj+1] +=
+            self.weights += eps*dw/nData
+            self.bias += eps*db/nData
+
+            
     def sampleHidden(self,vis,steps):
         stateUp = np.copy(self.state)
         stateUp[0] = vis
