@@ -25,10 +25,14 @@ class sdbm(object):
     def train(self,data):
         pass
 
-    def ddiff(self,state,layer,position):
+    def dedwdiff(self,state,layer,position):
+        pass
+    def dedbdiff(self,state,layer,position):
         pass
     def ediff(self,state,layer,position):
-        pass
+        stateFlip = np.copy(state)
+        state[layer,position] = int(not state[layer,position])
+        return self.energy(self.weights,self.bias,state)-self.energy(self.weights,self.bias,stateFlip)
 
     def mpfTrain(self,vis,steps,eps,stepsSample):
         nData = vis.shape[0]
@@ -40,12 +44,12 @@ class sdbm(object):
             for state in fullState:
                 #for visible
                 for kk in xrange(npl):
-                    db[0] += ddiff(state,0,npl)*np.exp(.5*(ediff(state,0,npl))
+                    db[0] += dedbdiff(state,0,npl)*np.exp(.5*(ediff(state,0,npl))
                 for jj in xrange(layers-1):
                     for kk in xrange(npl):
-                        dw[jj] +=
-                        dw[jj] +=
-                        db[jj+1] +=
+                        dw[jj] += dedwdiff(state,jj,npl)*np.exp(.5*(ediff(state,jj,npl))
+                        dw[jj] += dedwdiff(state,jj,npl)*np.exp(.5*(ediff(state,jj,npl))
+                        db[jj+1] += dedbdiff(state,jj+1,npl)*np.exp(.5*(ediff(state,jj+1,npl))
             self.weights += eps*dw/nData
             self.bias += eps*db/nData
 
@@ -54,11 +58,10 @@ class sdbm(object):
         stateUp = np.copy(self.state)
         stateUp[0] = vis
         for ii in xrange(steps):
-            oldstate = np.copy(stateUp)
             rands = np.random.rand(self.layers-1,self.npl)
             for jj in xrange(1,self.layers-1):
                 for kk in xrange(self.npl):
-                    terms = self.bias[jj,kk]+np.dot(oldstate[jj-1],self.weights[jj-1,:,kk])+np.dot(oldstate[jj+1],self.weights[jj,kk])
+                    terms = self.bias[jj,kk]+np.dot(stateUp[jj-1],self.weights[jj-1,:,kk])+np.dot(stateUp[jj+1],self.weights[jj,kk])
                     prob = 1/(1+np.exp(terms))
                     if rands[jj-1,kk] >= prob:
                         stateUp[jj,kk] = 1
@@ -66,7 +69,7 @@ class sdbm(object):
                         stateUp[jj,kk] = 0
             for kk in xrange(self.npl):
                 top = self.layers-1
-                terms = self.bias[top,kk]+np.dot(oldstate[top-1],self.weights[top-1,:,kk])
+                terms = self.bias[top,kk]+np.dot(stateUp[top-1],self.weights[top-1,:,kk])
                 prob = 1/(1+np.exp(terms))
                 if rands[top-1,kk] >= prob:
                     stateUp[top,kk] = 1
