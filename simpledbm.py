@@ -1,5 +1,5 @@
-#from __future__ import division
-#from __future__ import print_function
+from __future__ import division
+from __future__ import print_function
 import numpy as np
 
 class sdbm(object):
@@ -25,13 +25,17 @@ class sdbm(object):
     def train(self,data):
         pass
 
-    def dedwdiff(self,state,layer,position):
-        pass
-    def dedbdiff(self,state,layer,position):
-        pass
-    def ediff(self,state,layer,position):
+    def dedwDiff(self,state,layer,layerFlip,position):
         stateFlip = np.copy(state)
-        state[layer,position] = int(not state[layer,position])
+        stateFlip[layerFlip,position] = int(not state[layerFlip,position])
+        return -(np.outer(state[layer],state[layer+1])-np.outer(stateFlip[layer],stateFlip[layer+1]))
+    def dedbDiff(self,state,layer,position):
+        stateFlip = np.copy(state)
+        stateFlip[layer,position] = int(not state[layer,position])
+        return -(state[layer]-stateFlip[layer])
+    def eDiff(self,state,layerFlip,position):
+        stateFlip = np.copy(state)
+        stateFlip[layerFlip,position] = int(not state[layerFlip,position])
         return self.energy(self.weights,self.bias,state)-self.energy(self.weights,self.bias,stateFlip)
 
     def mpfTrain(self,vis,steps,eps,stepsSample):
@@ -43,16 +47,16 @@ class sdbm(object):
             #update weights and biases
             for state in fullState:
                 #for visible
-                for kk in xrange(npl):
-                    db[0] += dedbdiff(state,0,npl)*np.exp(.5*(ediff(state,0,npl))
-                for jj in xrange(layers-1):
-                    for kk in xrange(npl):
-                        dw[jj] += dedwdiff(state,jj,npl)*np.exp(.5*(ediff(state,jj,npl))
-                        dw[jj] += dedwdiff(state,jj,npl)*np.exp(.5*(ediff(state,jj,npl))
-                        db[jj+1] += dedbdiff(state,jj+1,npl)*np.exp(.5*(ediff(state,jj+1,npl))
-            self.weights += eps*dw/nData
-            self.bias += eps*db/nData
-
+                for kk in xrange(self.npl):
+                    db[0] = db[0]+self.dedbDiff(state,0,kk)*np.exp(.5*(self.eDiff(state,0,kk)))
+                for jj in xrange(self.layers-1):
+                    for kk in xrange(self.npl):
+                        dw[jj] = dw[jj]+self.dedwDiff(state,jj,jj,kk)*np.exp(.5*(self.eDiff(state,jj,kk)))
+                        ep = self.eDiff(state,jj+1,kk)
+                        dw[jj] = dw[jj]+self.dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
+                        db[jj+1] = db[jj+1]+self.dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
+            self.weights = self.weights+eps*dw/nData
+            self.bias = self.bias+eps*db/nData
             
     def sampleHidden(self,vis,steps):
         stateUp = np.copy(self.state)
@@ -63,7 +67,7 @@ class sdbm(object):
                 for kk in xrange(self.npl):
                     terms = self.bias[jj,kk]+np.dot(stateUp[jj-1],self.weights[jj-1,:,kk])+np.dot(stateUp[jj+1],self.weights[jj,kk])
                     prob = 1/(1+np.exp(terms))
-                    if rands[jj-1,kk] >= prob:
+                    if rands[jj-1,kk] <= prob:
                         stateUp[jj,kk] = 1
                     else:
                         stateUp[jj,kk] = 0
@@ -71,7 +75,7 @@ class sdbm(object):
                 top = self.layers-1
                 terms = self.bias[top,kk]+np.dot(stateUp[top-1],self.weights[top-1,:,kk])
                 prob = 1/(1+np.exp(terms))
-                if rands[top-1,kk] >= prob:
+                if rands[top-1,kk] <= prob:
                     stateUp[top,kk] = 1
                 else:
                     stateUp[top,kk] = 0
@@ -95,4 +99,10 @@ class sdbm(object):
         return self.bias
     def getState(self):
         return self.state
+    def setWeights(self):
+        pass
+    def setBias(self):
+        pass
+    def setState(self):
+        pass
 
