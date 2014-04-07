@@ -69,7 +69,7 @@ class sdbm(object):
         """
         stateFlip = np.copy(state)
         stateFlip[layerFlip,position] = int(not state[layerFlip,position])
-        return -(np.outer(state[layer],state[layer+1])-np.outer(stateFlip[layer],stateFlip[layer+1]))
+        return np.outer(state[layer],state[layer+1])-np.outer(stateFlip[layer],stateFlip[layer+1])
     
     def dedbDiff(self,state,layer,position):
         """Compute the nevative difference between dedb for a given state and 
@@ -88,7 +88,7 @@ class sdbm(object):
         """
         stateFlip = np.copy(state)
         stateFlip[layer,position] = int(not state[layer,position])
-        return -(state[layer]-stateFlip[layer])
+        return state[layer]-stateFlip[layer]
 
     def eDiff(self,state,layerFlip,position):
         """Compute the difference between energy for a given state and 
@@ -149,9 +149,8 @@ class sdbm(object):
                         dw[jj] += self.dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
                         db[jj+1] += self.dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
 
-            # Should this be  -= since we're trying to minimize flow?
-            self.weights += eps*dw/nData
-            self.bias += eps*db/nData
+            self.weights -= eps*dw/nData
+            self.bias -= eps*db/nData
             
     def sampleHidden(self,vis,steps):
         """Sample from P(h|v) for the DBM via gibbs sampling for each
@@ -189,8 +188,40 @@ class sdbm(object):
                     stateUp[top,kk] = 0
         return stateUp
 
+    def sampleVisible(self,state):
+        """Sample from P(v|h) of the DBM.
+
+        Parameters
+        ----------
+        state : array-like, shape (n_layers, n_units)
+            State of all the units
+        """
+        vis = np.copy(self.state[0])
+        rands = self.rng.rand(self.n_units)
+        for kk in xrange(self.n_units):
+            terms = self.bias[0,kk]+np.dot(state[1],self.weights[0,:,kk])
+            prob = 1/(1+np.exp(terms))
+            if rands[kk] <= prob:
+                vis[kk] = 1
+            else:
+                vis[kk] = 0
+
+        return vis
+
     def sampleFull(self,steps):
-        pass
+        """Sample from P(h,v) of the DBM using Gibbs sampling.
+
+        Parameters
+        ----------
+        steps : int
+            Number of steps to gibbs sample
+        """
+        state = self.state.copy()
+        for i in xrange(steps):
+            vis = self.sampleVisible(state)
+            state = self.sampleHidden(vis, steps)
+
+        return state
 
     def energy(self,weights,bias,state):
         """Calcluate energy of a DBM
