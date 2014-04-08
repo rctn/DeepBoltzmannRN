@@ -92,7 +92,7 @@ class sdbm(object):
 
     def eDiff(self,state,layerFlip,position):
         """Compute the difference between energy for a given state and 
-        dedw for a neighboring flipped state.
+        energy for a neighboring flipped state.
 
         Parameters
         ----------
@@ -238,9 +238,11 @@ class sdbm(object):
 
         state : array-like, shape (n_layers, n_units)
         """
-        ebias = np.sum([np.dot(bias[ii],state[ii]) for ii in xrange(self.n_layers)])
-        eweights = np.sum([np.dot(state[ii],np.dot(weights[ii],state[ii+1])) for ii in xrange(self.n_layers-1)])
-        return -ebias-eweights
+        negative_energy = (bias*state).sum()
+        for ii in xrange(self.n_layers-1):
+            negative_energy += state[ii].dot(weights[ii].dot(state[ii+1]))
+
+        return -negative_energy
     
     def curEnergy(self):
         """Calculate current energy of DBM
