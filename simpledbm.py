@@ -47,7 +47,7 @@ class sdbm(object):
         self.n_layers = n_layers
         self.n_units = n_units
 
-    def pretrain(self,data):
+    def pretrain(self,vis,steps,eps):
         pass
     def train(self,data):
         pass
