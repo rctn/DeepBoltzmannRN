@@ -169,23 +169,16 @@ class sdbm(object):
         for ii in xrange(steps):
             rands = self.rng.rand(self.n_layers-1,self.n_units)
             for jj in xrange(1,self.n_layers-1):
-                for kk in xrange(self.n_units):
-                    # Calculate terms for weights above and weights below
-                    terms = self.bias[jj,kk]+np.dot(stateUp[jj-1],self.weights[jj-1,:,kk])+np.dot(stateUp[jj+1],self.weights[jj,kk])
-                    prob = 1/(1+np.exp(-terms))
-                    if rands[jj-1,kk] <= prob:
-                        stateUp[jj,kk] = 1
-                    else:
-                        stateUp[jj,kk] = 0
+                terms = self.bias[jj] + self.weights[jj-1].dot(stateUp[jj-1]) + self.weights[jj].T.dot(stateUp[jj+1])
+                probs = 1/(1+np.exp(-terms))
+                stateUp[jj] = rands[jj-1] <= probs
+
             # Sampling for the top layer
-            for kk in xrange(self.n_units):
-                top = self.n_layers-1
-                terms = self.bias[top,kk]+np.dot(stateUp[top-1],self.weights[top-1,:,kk])
-                prob = 1/(1+np.exp(-terms))
-                if rands[top-1,kk] <= prob:
-                    stateUp[top,kk] = 1
-                else:
-                    stateUp[top,kk] = 0
+            top = self.n_layers-1
+            terms = self.bias[top] + self.weights[top-1].dot(stateUp[top-1])
+            probs = 1/(1+np.exp(-terms))
+            stateUp[top] = rands[top-1] <= probs
+
         return stateUp
 
     def sampleVisible(self,state):
@@ -196,11 +189,11 @@ class sdbm(object):
         state : array-like, shape (n_layers, n_units)
             State of all the units
         """
-        vis = np.zeros_like(self.state[0])
+        vis = np.empty_like(self.state[0])
         rands = self.rng.rand(self.n_units)
         terms = self.bias[0] + self.weights[0].T.dot(state[1])
         probs = 1/(1+np.exp(-terms))
-        vis[rands <= probs] = 1
+        vis = rands <= probs
 
         return vis
 
