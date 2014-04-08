@@ -69,7 +69,7 @@ class sdbm(object):
         """
         stateFlip = np.copy(state)
         stateFlip[layerFlip,position] = int(not state[layerFlip,position])
-        return np.outer(state[layer],state[layer+1])-np.outer(stateFlip[layer],stateFlip[layer+1])
+        return -np.outer(state[layer],state[layer+1])+np.outer(stateFlip[layer],stateFlip[layer+1])
     
     def dedbDiff(self,state,layer,position):
         """Compute the nevative difference between dedb for a given state and 
@@ -88,7 +88,7 @@ class sdbm(object):
         """
         stateFlip = np.copy(state)
         stateFlip[layer,position] = int(not state[layer,position])
-        return state[layer]-stateFlip[layer]
+        return -state[layer]+stateFlip[layer]
 
     def eDiff(self,state,layerFlip,position):
         """Compute the difference between energy for a given state and 
@@ -151,6 +151,21 @@ class sdbm(object):
 
             self.weights -= eps*dw/nData
             self.bias -= eps*db/nData
+
+    def ExHidden(self,vis,meanSteps):
+        """Finds Expectation for hidden units using mean-field variational
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Visible data to condition on
+
+        meanSteps : int
+            Number of mean-field steps to cycle through
+        """
+        pass
+
+        
             
     def sampleHidden(self,vis,steps):
         """Sample from P(h|v) for the DBM via gibbs sampling for each
@@ -225,10 +240,10 @@ class sdbm(object):
         """
         ebias = np.sum([np.dot(bias[ii],state[ii]) for ii in xrange(self.n_layers)])
         eweights = np.sum([np.dot(state[ii],np.dot(weights[ii],state[ii+1])) for ii in xrange(self.n_layers-1)])
-        return ebias+eweights
+        return -ebias-eweights
     
     def curEnergy(self):
-        """Calculate current energy of DB
+        """Calculate current energy of DBM
         """
         return self.energy(self.weights,self.bias,self.state)
 
