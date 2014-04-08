@@ -235,9 +235,9 @@ class sdbm(object):
         return ebias+eweights
     
     def curEnergy(self):
-        ebias = np.sum([np.dot(self.bias[ii],self.state[ii]) for ii in xrange(self.n_layers)])
-        eweights = np.sum([np.dot(self.state[ii],np.dot(self.weights[ii],self.state[ii+1])) for ii in xrange(self.n_layers-1)])
-        return ebias+eweights
+        """Calculate current energy of DB
+        """
+        return self.energy(self.weights,self.bias,self.state)
 
     def getWeights(self):
         return self.weights
