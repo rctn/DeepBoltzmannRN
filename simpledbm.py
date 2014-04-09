@@ -249,6 +249,28 @@ class sdbm(object):
         """
         return self.energy(self.weights,self.bias,self.state)
 
+    def scoreSamples(self, vis):
+        """Evaluate the fitness of the model for a given dataset. Calculate
+        the expectation of P(v|h) with respect to P(h) as a proxy for an
+        unormalized P(v).
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Dataset to evaluate fitness on.
+        """
+        p_v = 0.
+        n_hsamples = 10
+        for i in range(vis.shape[0]):
+            for j in range(n_hsamples):
+                # Sample P(h)
+                state = self.sampleFull(20)
+                # Set to P(v|h)
+                state[0] = vis[i]
+                p_v += np.exp(-self.energy(self.weights, self.bias, state))
+
+        return p_v/(vis.shape[0]*n_hsamples)
+
     def getWeights(self):
         return self.weights
     def getBias(self):
