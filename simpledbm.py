@@ -47,7 +47,7 @@ class sdbm(object):
         self.n_layers = n_layers
         self.n_units = n_units
 
-    def pretrain(self,data):
+    def pretrain(self,vis,steps,eps):
         pass
     def train(self,data):
         pass
@@ -152,8 +152,8 @@ class sdbm(object):
             self.weights -= eps*dw/nData
             self.bias -= eps*db/nData
 
-    def ExHidden(self,vis,meanSteps):
-        """Finds Expectation for hidden units using mean-field variational
+    def ExHidden(self,vis,meanSteps,updateSteps):
+        """Finds Expectation for hidden units using mean-field variational approach
 
         Parameters
         ----------
@@ -162,8 +162,27 @@ class sdbm(object):
 
         meanSteps : int
             Number of mean-field steps to cycle through
+
+        updateSteps : int
+            Number of times to run through layers. Must be >=2 for any top down feedback
         """
-        pass
+        curState = np.zeros((vis.shape[0],self.n_layers,self.n_units))
+        # Initialize state to visible and zeros
+        for ii in xrange(vis.shape[0]):
+            curState[ii,0] = vis[ii]
+        for ii in xrange(updateSteps):
+            # Find activations for internal layers
+            for jj in xrange(1,self.n_layers-1):
+                # Apply mean field equations
+                for kk in xrange(meanSteps):
+                    terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(curState[:,jj+1],self.weights[jj])
+                    curState[:,jj] = 1./(1+np.exp(-terms))
+            # Find activation for top layer
+            # Apply mean field equations
+            for kk in xrange(meanSteps):
+                terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
+                curState[:,self.n_layers-1] = 1./(1+np.exp(-terms))
+        return curState
 
         
             
