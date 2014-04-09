@@ -68,7 +68,7 @@ class sdbm(object):
             Position in layer for flipped state
         """
         stateFlip = np.copy(state)
-        stateFlip[layerFlip,position] = int(not state[layerFlip,position])
+        stateFlip[layerFlip,position] = int(not round(state[layerFlip,position]))
         return -np.outer(state[layer],state[layer+1])+np.outer(stateFlip[layer],stateFlip[layer+1])
     
     def dedbDiff(self,state,layer,position):
@@ -87,7 +87,7 @@ class sdbm(object):
             Position in layer for flipped state
         """
         stateFlip = np.copy(state)
-        stateFlip[layer,position] = int(not state[layer,position])
+        stateFlip[layer,position] = int(not round(state[layer,position]))
         return -state[layer]+stateFlip[layer]
 
     def eDiff(self,state,layerFlip,position):
@@ -106,7 +106,7 @@ class sdbm(object):
             Position in layer for flipped state
         """
         stateFlip = np.copy(state)
-        stateFlip[layerFlip,position] = int(not state[layerFlip,position])
+        stateFlip[layerFlip,position] = int(not round(state[layerFlip,position]))
         return self.energy(self.weights,self.bias,state)-self.energy(self.weights,self.bias,stateFlip)
 
     def mpfTrain(self,vis,steps,eps,stepsSample):
@@ -130,7 +130,58 @@ class sdbm(object):
         nData = vis.shape[0]
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
+
+        # Gibbs Sample hidden units
         fullState = np.array([self.sampleHidden(vis1,stepsSample) for vis1 in vis])
+        for ii in xrange(steps):
+            dw = np.zeros_like(self.weights)
+            db = np.zeros_like(self.bias)
+            # Update weights and biases
+            for state in fullState:
+                # For visible
+                # Gradient of flow w.r.t biases
+                for kk in xrange(self.n_units):
+                    db[0] += self.dedbDiff(state,0,kk)*np.exp(.5*(self.eDiff(state,0,kk)))
+
+                # Gradient of flow w.r.t. weights
+                for jj in xrange(self.n_layers-1):
+                    for kk in xrange(self.n_units):
+                        dw[jj] += self.dedwDiff(state,jj,jj,kk)*np.exp(.5*(self.eDiff(state,jj,kk)))
+                        ep = self.eDiff(state,jj+1,kk)
+                        dw[jj] += self.dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
+                        db[jj+1] += self.dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
+
+            self.weights -= eps*dw/nData
+            self.bias -= eps*db/nData
+
+            
+    def ExTrain(self,vis,steps,eps,meanSteps,updateSteps):
+        """Adjust weights/biases of the network to minimize probability flow, K via
+        gradient descent.
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Dataset to train on
+
+        steps : int
+            Number of iterations to run MPF (parameter updates)
+
+        eps : float
+            Learning rate
+
+        meanSteps : int
+            Number of mean-field cycles per layer
+
+        updateSteps : int
+            Number of mean-field cycles for whole network
+        """
+        nData = vis.shape[0]
+        # Propagate visible data up the network (hopefully hidden states can be considered
+        # observed data)
+
+        #Find meanfield estimates
+        fullState = np.around(self.ExHidden(vis,meanSteps,updateSteps))
         for ii in xrange(steps):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
