@@ -273,6 +273,11 @@ class sdbm(object):
         the expectation of P(v|h) with respect to P(h) as a proxy for an
         unormalized P(v).
 
+        TODO: Recycle P(v,h) samples to estimate partition and reuse the set 
+        of P(h) samples for all visible datapoints. Recycling and reuse is
+        important for the environment and necessary because partition function 
+        Z(W,b) changes when parameter are updated.
+
         Parameters
         ----------
         vis : array-like, shape (n_data, n_units)
