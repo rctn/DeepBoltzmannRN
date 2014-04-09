@@ -68,7 +68,7 @@ class sdbm(object):
             Position in layer for flipped state
         """
         stateFlip = np.copy(state)
-        stateFlip[layerFlip,position] = int(not state[layerFlip,position])
+        stateFlip[layerFlip,position] = int(not round(state[layerFlip,position]))
         return -np.outer(state[layer],state[layer+1])+np.outer(stateFlip[layer],stateFlip[layer+1])
     
     def dedbDiff(self,state,layer,position):
@@ -87,7 +87,7 @@ class sdbm(object):
             Position in layer for flipped state
         """
         stateFlip = np.copy(state)
-        stateFlip[layer,position] = int(not state[layer,position])
+        stateFlip[layer,position] = int(not round(state[layer,position]))
         return -state[layer]+stateFlip[layer]
 
     def eDiff(self,state,layerFlip,position):
@@ -106,7 +106,7 @@ class sdbm(object):
             Position in layer for flipped state
         """
         stateFlip = np.copy(state)
-        stateFlip[layerFlip,position] = int(not state[layerFlip,position])
+        stateFlip[layerFlip,position] = int(not round(state[layerFlip,position]))
         return self.energy(self.weights,self.bias,state)-self.energy(self.weights,self.bias,stateFlip)
 
     def mpfTrain(self,vis,steps,eps,stepsSample):
@@ -155,7 +155,7 @@ class sdbm(object):
             self.bias -= eps*db/nData
 
             
-    def ExTrain(self,vis,eps,meanSteps,updateSteps):
+    def ExTrain(self,vis,steps,eps,meanSteps,updateSteps):
         """Adjust weights/biases of the network to minimize probability flow, K via
         gradient descent.
 
@@ -163,6 +163,9 @@ class sdbm(object):
         ----------
         vis : array-like, shape (n_data, n_units)
             Dataset to train on
+
+        steps : int
+            Number of iterations to run MPF (parameter updates)
 
         eps : float
             Learning rate
