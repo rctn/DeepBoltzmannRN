@@ -334,17 +334,33 @@ class sdbm(object):
         vis : array-like, shape (n_data, n_units)
             Dataset to evaluate fitness on.
         """
-        p_v = 0.
-        n_hsamples = 10
-        for i in range(vis.shape[0]):
-            for j in range(n_hsamples):
-                # Sample P(h)
-                state = self.sampleFull(20)
-                # Set to P(v|h)
-                state[0] = vis[i]
-                p_v += np.exp(-self.energy(self.weights, self.bias, state))
+        average_p_v = 0.
+        n_hsamples = 100
+        
+        #Normalization Constant
+        z = 0.
 
-        return p_v/(vis.shape[0]*n_hsamples)
+        for i in xrange(n_hsamples):
+            # Sample P(h)
+            state = self.sampleFull(20)
+            for j in xrange(vis.shape[0]):
+                K = (self.weights.dot(state[1]) + self.bias[0]).T
+                # Set to P(v|h)
+                state[0] = vis[j]
+
+                # Unormalized P(v|h)
+                p_v = np.exp(-self.energy(self.weights, self.bias, state))
+
+                # Divide P(v|h) by normalization
+                for k in xrange(K.shape[0]):
+                    p_v /= 1+np.exp(K[k])
+                p_v /= np.exp(self.bias[1].dot(state[1]))
+
+                average_p_v += p_v
+
+        average_p_v /= n_hsamples*vis.shape[0]
+
+        return average_p_v
 
     def getWeights(self):
         return self.weights
