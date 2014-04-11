@@ -2,6 +2,120 @@ from __future__ import division
 from __future__ import print_function
 import numpy as np
 
+#Auxillary Functions
+def flow(params,*args):
+    """MPF objective function for RBM. Used to pretrain DBM layers.
+
+    Parameters
+    ----------
+    params : array-like, shape (n_units^2+2*n_units)
+        Weights (flattened), visible biases, and hidden biases.
+
+    *args : tuple or list or args
+       Expects eps which is coefficient for MPF and state which is a
+       vectors of visible states to learn on.
+    """
+    eps = args[0]
+    state = args[1]
+    n_total = params.shape[0]
+    n_units = int(np.sqrt(1+n_total)-1)
+    n_data = state.shape[0]
+    weights = params[:n_units**2].reshape((n_units,n_units))
+    biasv = params[n_units**2:n_units**2+n_units]
+    biash = params[n_units**2+n_units:n_units**2+2*n_units]
+    sflow = np.sum([np.exp(.5*(energy(weights,biasv,biash,state)-energyBF(weights,biasv,biash,state,ii))) for ii in xrange(n_units)])
+    k = eps*sflow/n_data
+    return k
+
+def gradFlow(params,*args):
+    """Gradient of MPF objective function for RBM. Used to pretrain DBM layers.
+
+    Parameters
+    ----------
+    params : array-like, shape (n_units^2+2*n_units)
+        Weights (flattened), visible biases, and hidden biases.
+
+    *args : tuple or list or args
+       Expects eps which is coefficient for MPF and state which is a
+       vectors of visible states to learn on.
+    """
+    eps = args[0]
+    state = args[1]
+    n_data = state.shape[0]
+    n_total = params.shape[0]
+    n_units = int(np.sqrt(1+n_total)-1)
+    weights = params[:n_units**2].reshape((n_units,n_units))
+    biasv = params[n_units**2:n_units**2+n_units]
+    biash = params[n_units**2+n_units:n_units**2+2*n_units]
+    dkdw = np.zeros_like(weights)
+    dkdbv = np.zeros_like(biasv)
+    dkdbh = np.zeros_like(biash)
+    for ii in xrange(n_units):
+        diffew = dedw(weights,biasv,biash,state)-dedwBF(weights,biasv,biash,state,ii)
+        diffebv = dedbv(weights,biasv,biash,state)-dedbvBF(weights,biasv,biash,state,ii)
+        diffebh = dedbh(weights,biasv,biash,state)-dedbhBF(weights,biasv,biash,state,ii)
+        diffe = np.exp(.5*(energyRBM(weights,biasv,biash,state)-energyRBMBF(weights,biasv,biash,state,ii)))
+        dkdw += np.dot(np.transpose(diffew,axes=(1,2,0)),diffe)
+        dkdbv += np.dot(diffebv.T,diffe)
+        dkdbh += np.dot(diffebh.T,diffe)
+    return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
+
+def sigm(x):
+    """Sigmoid function
+
+    Parameters
+    ----------
+    x : array-like
+        Array of elements to calculate sigmoid for.
+    """
+        return 1./(1+np.exp(-x))
+
+def energyRBM(weights,biasv,biash,state):
+    """Energy function for RBM
+
+    Parameters
+    ----------
+    weights : array-like, shape (n_units,n_units)
+        Visble to hidden weights
+
+    biasv : array-like, shape n_units
+        Biases for visible units
+
+    biash : array-like, shape n_units
+        Biases for hidden units
+    """
+        logTerm = np.sum(np.log(1.+np.exp(biash+np.dot(state,weights))),axis=1)
+            return -np.dot(state,biasv)-logTerm
+
+def energyRBMBF(weights,biasv,biash,state,n):
+        flip = state.copy()
+            flip[:,n] = 1-flip[:,n]
+                return energy(weights,biasv,biash,flip)
+
+def dedw(weights,biasv,biash,state):
+        n_data = state.shape[0]
+            return -np.array([np.outer(state[ii],sigm(biash+np.dot(state[ii],weights))) for ii in xrange(n_data)])
+def dedbv(weights,biasv,biash,state):
+        return -state
+def dedbh(weights,biasv,biash,state):
+        n_data = state.shape[0]
+            return -sigm(np.tile(biash,(n_data,1))+np.dot(state,weights))
+
+def dedwBF(weights,biasv,biash,state,n):
+        n_data = state.shape[0]
+            flip = state.copy()
+                flip[:,n] = 1-flip[:,n]
+                    return dedw(weights,biasv,biash,flip)
+def dedbvBF(weights,biasv,biash,state,n):
+        flip = state.copy()
+            flip[:,n] = 1-flip[:,n]
+                return dedbv(weights,biasv,biash,flip)
+def dedbhBF(weights,biasv,biash,state,n):
+        flip = state.copy()
+            flip[:,n] = 1-flip[:,n]
+                return dedbh(weights,biasv,biash,flip)
+
+
 class sdbm(object):
     """Simple Deep Boltzmann Machine (DBM)
 
@@ -155,7 +269,7 @@ class sdbm(object):
             self.bias -= eps*db/nData
 
             
-    def ExTrain(self,vis,steps,eps,meanSteps,updateSteps):
+    def ExTrain(self,vis,steps,eps,meanSteps,intOnly = None):
         """Adjust weights/biases of the network to minimize probability flow, K via
         gradient descent.
 
@@ -176,12 +290,16 @@ class sdbm(object):
         updateSteps : int
             Number of mean-field cycles for whole network
         """
+        if intOnly is None:
+            intOnly = False
         nData = vis.shape[0]
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
 
         #Find meanfield estimates
-        fullState = np.around(self.ExHidden(vis,meanSteps,updateSteps))
+        fullState = np.around(self.ExHidden(vis,meanSteps))
+        if intOnly:
+            fullState = np.around(fullState)
         for ii in xrange(steps):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
@@ -203,7 +321,7 @@ class sdbm(object):
             self.weights -= eps*dw/nData
             self.bias -= eps*db/nData
 
-    def ExHidden(self,vis,meanSteps,updateSteps):
+    def ExHidden(self,vis,meanSteps):
         """Finds Expectation for hidden units using mean-field variational approach
 
         Parameters
@@ -221,18 +339,16 @@ class sdbm(object):
         # Initialize state to visible and zeros
         for ii in xrange(vis.shape[0]):
             curState[ii,0] = vis[ii]
-        for ii in xrange(updateSteps):
+        for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
                 # Apply mean field equations
-                for kk in xrange(meanSteps):
-                    terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(curState[:,jj+1],self.weights[jj])
-                    curState[:,jj] = 1./(1+np.exp(-terms))
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(curState[:,jj+1],self.weights[jj])
+                curState[:,jj] = 1./(1+np.exp(-terms))
             # Find activation for top layer
             # Apply mean field equations
-            for kk in xrange(meanSteps):
-                terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
-                curState[:,self.n_layers-1] = 1./(1+np.exp(-terms))
+            terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
+            curState[:,self.n_layers-1] = 1./(1+np.exp(-terms))
         return curState
 
         
