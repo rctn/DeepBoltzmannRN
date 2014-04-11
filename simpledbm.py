@@ -319,47 +319,42 @@ class sdbm(object):
         """
         return self.energy(self.weights,self.bias,self.state)
 
-    def scoreSamples(self, vis):
+    def scoreSamples(self, vis, n_samples, steps):
         """Evaluate the fitness of the model for a given dataset. Calculate
         the expectation of P(v|h) with respect to P(h) as a proxy for an
         unormalized P(v).
 
-        TODO: Recycle P(v,h) samples to estimate partition and reuse the set 
-        of P(h) samples for all visible datapoints. Recycling and reuse is
-        important for the environment and necessary because partition function 
-        Z(W,b) changes when parameter are updated.
-
         Parameters
         ----------
         vis : array-like, shape (n_data, n_units)
-            Dataset to evaluate fitness on.
+            Dataset to evaluate fitness on
+
+        n_samples : int
+            Number of samples to draw to estimate expectation
+
+        steps : int
+            Number of steps to gibbs sample
         """
         average_p_v = 0.
-        n_hsamples = 100
         
-        #Normalization Constant
-        z = 0.
-
-        for i in xrange(n_hsamples):
+        for i in xrange(n_samples):
             # Sample P(h)
-            state = self.sampleFull(20)
-            for j in xrange(vis.shape[0]):
-                K = (self.weights.dot(state[1]) + self.bias[0]).T
+            state = self.sampleFull(steps)
+
+            # Calculate Normalization
+            log_z = 0.
+            K = (self.weights.dot(state[1]) + self.bias[0]).T
+            for k in xrange(K.shape[0]):
+                log_z += np.log(1+np.exp(K[k]))
+            log_z += self.bias[1].dot(state[1])
+            for j in xrange(vis.shape[0]):  
                 # Set to P(v|h)
                 state[0] = vis[j]
-
-                # Unormalized P(v|h)
-                p_v = np.exp(-self.energy(self.weights, self.bias, state))
-
-                # Divide P(v|h) by normalization
-                for k in xrange(K.shape[0]):
-                    p_v /= 1+np.exp(K[k])
-                p_v /= np.exp(self.bias[1].dot(state[1]))
-
+                # Normalized P(v|h)
+                p_v = np.exp(-self.energy(self.weights, self.bias, state)-log_z)
                 average_p_v += p_v
 
-        average_p_v /= n_hsamples*vis.shape[0]
-
+        average_p_v /= n_samples*vis.shape[0]
         return average_p_v
 
     def getWeights(self):
