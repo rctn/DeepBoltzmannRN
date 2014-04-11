@@ -4,6 +4,17 @@ import numpy as np
 
 #Auxillary Functions
 def flow(params,*args):
+    """MPF objective function for RBM. Used to pretrain DBM layers.
+
+    Parameters
+    ----------
+    params : array-like, shape (n_units^2+2*n_units)
+        Weights (flattened), visible biases, and hidden biases.
+
+    *args : tuple or list or args
+       Expects eps which is coefficient for MPF and state which is a
+       vectors of visible states to learn on.
+    """
     eps = args[0]
     state = args[1]
     n_total = params.shape[0]
@@ -17,6 +28,17 @@ def flow(params,*args):
     return k
 
 def gradFlow(params,*args):
+    """Gradient of MPF objective function for RBM. Used to pretrain DBM layers.
+
+    Parameters
+    ----------
+    params : array-like, shape (n_units^2+2*n_units)
+        Weights (flattened), visible biases, and hidden biases.
+
+    *args : tuple or list or args
+       Expects eps which is coefficient for MPF and state which is a
+       vectors of visible states to learn on.
+    """
     eps = args[0]
     state = args[1]
     n_data = state.shape[0]
@@ -32,20 +54,40 @@ def gradFlow(params,*args):
         diffew = dedw(weights,biasv,biash,state)-dedwBF(weights,biasv,biash,state,ii)
         diffebv = dedbv(weights,biasv,biash,state)-dedbvBF(weights,biasv,biash,state,ii)
         diffebh = dedbh(weights,biasv,biash,state)-dedbhBF(weights,biasv,biash,state,ii)
-        diffe = np.exp(.5*(energy(weights,biasv,biash,state)-energyBF(weights,biasv,biash,state,ii)))
+        diffe = np.exp(.5*(energyRBM(weights,biasv,biash,state)-energyRBMBF(weights,biasv,biash,state,ii)))
         dkdw += np.dot(np.transpose(diffew,axes=(1,2,0)),diffe)
         dkdbv += np.dot(diffebv.T,diffe)
         dkdbh += np.dot(diffebh.T,diffe)
     return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
 
 def sigm(x):
+    """Sigmoid function
+
+    Parameters
+    ----------
+    x : array-like
+        Array of elements to calculate sigmoid for.
+    """
         return 1./(1+np.exp(-x))
 
-def energy(weights,biasv,biash,state):
+def energyRBM(weights,biasv,biash,state):
+    """Energy function for RBM
+
+    Parameters
+    ----------
+    weights : array-like, shape (n_units,n_units)
+        Visble to hidden weights
+
+    biasv : array-like, shape n_units
+        Biases for visible units
+
+    biash : array-like, shape n_units
+        Biases for hidden units
+    """
         logTerm = np.sum(np.log(1.+np.exp(biash+np.dot(state,weights))),axis=1)
             return -np.dot(state,biasv)-logTerm
 
-def energyBF(weights,biasv,biash,state,n):
+def energyRBMBF(weights,biasv,biash,state,n):
         flip = state.copy()
             flip[:,n] = 1-flip[:,n]
                 return energy(weights,biasv,biash,flip)
