@@ -68,7 +68,7 @@ def sigm(x):
     x : array-like
         Array of elements to calculate sigmoid for.
     """
-        return 1./(1+np.exp(-x))
+    return 1./(1+np.exp(-x))
 
 def energyRBM(weights,biasv,biash,state):
     """Energy function for RBM
@@ -84,37 +84,93 @@ def energyRBM(weights,biasv,biash,state):
     biash : array-like, shape n_units
         Biases for hidden units
     """
-        logTerm = np.sum(np.log(1.+np.exp(biash+np.dot(state,weights))),axis=1)
-            return -np.dot(state,biasv)-logTerm
+    logTerm = np.sum(np.log(1.+np.exp(biash+np.dot(state,weights))),axis=1)
+    return -np.dot(state,biasv)-logTerm
 
 def energyRBMBF(weights,biasv,biash,state,n):
-        flip = state.copy()
-            flip[:,n] = 1-flip[:,n]
-                return energy(weights,biasv,biash,flip)
+    flip = state.copy()
+    flip[:,n] = 1-flip[:,n]
+    return energy(weights,biasv,biash,flip)
 
 def dedw(weights,biasv,biash,state):
-        n_data = state.shape[0]
-            return -np.array([np.outer(state[ii],sigm(biash+np.dot(state[ii],weights))) for ii in xrange(n_data)])
+    n_data = state.shape[0]
+    return -np.array([np.outer(state[ii],sigm(biash+np.dot(state[ii],weights))) for ii in xrange(n_data)])
 def dedbv(weights,biasv,biash,state):
-        return -state
+    return -state
 def dedbh(weights,biasv,biash,state):
-        n_data = state.shape[0]
-            return -sigm(np.tile(biash,(n_data,1))+np.dot(state,weights))
+    n_data = state.shape[0]
+    return -sigm(np.tile(biash,(n_data,1))+np.dot(state,weights))
 
 def dedwBF(weights,biasv,biash,state,n):
-        n_data = state.shape[0]
-            flip = state.copy()
-                flip[:,n] = 1-flip[:,n]
-                    return dedw(weights,biasv,biash,flip)
+    n_data = state.shape[0]
+    flip = state.copy()
+    flip[:,n] = 1-flip[:,n]
+    return dedw(weights,biasv,biash,flip)
 def dedbvBF(weights,biasv,biash,state,n):
-        flip = state.copy()
-            flip[:,n] = 1-flip[:,n]
-                return dedbv(weights,biasv,biash,flip)
-def dedbhBF(weights,biasv,biash,state,n):
-        flip = state.copy()
-            flip[:,n] = 1-flip[:,n]
-                return dedbh(weights,biasv,biash,flip)
+    flip = state.copy()
+    flip[:,n] = 1-flip[:,n]
+    return dedbv(weights,biasv,biash,flip)
 
+def dedbhBF(weights,biasv,biash,state,n):
+    flip = state.copy()
+    flip[:,n] = 1-flip[:,n]
+    return dedbh(weights,biasv,biash,flip)
+
+
+def energy(weights,bias,state):
+    """Calcluate energy of a DBM
+
+    Parameters
+    ----------
+    weights : array-like, shape (n_layers-1, n_units, n_units)
+
+    bias : array-like, shape (n_layers, n_units)
+
+    state : array-like, shape (n_layers, n_units)
+    """
+    negative_energy = (bias*state).sum()
+    for ii in xrange(weights.shape[0]):
+        negative_energy += state[ii].dot(weights[ii].dot(state[ii+1]))
+
+    return -negative_energy
+
+def dedbDiff(self,state,layer,position):
+    """Compute the nevative difference between dedb for a given state and 
+    dedw for a neighboring flipped state.
+
+    Parameters
+    ----------
+    state : array-like, shape (n_layers, n_units)
+        State of all the units
+
+    layer : int
+        Layer index for flipped state
+
+    position : int
+        Position in layer for flipped state
+    """
+    stateFlip = np.copy(state)
+    stateFlip[layer,position] = int(not round(state[layer,position]))
+    return -state[layer]+stateFlip[layer]
+
+def dedwDiff(self,state,layer,layerFlip,position):
+    """Compute the negative difference between dedw for a given state and 
+    dedw for a neighboring flipped state.
+
+    Parameters
+    ----------
+    state : array-like, shape (n_layers, n_units)
+        State of all the units
+
+    layer : int
+        Layer index for flipped state
+
+    position : int
+        Position in layer for flipped state
+    """
+    stateFlip = np.copy(state)
+    stateFlip[layerFlip,position] = int(not round(state[layerFlip,position]))
+    return -np.outer(state[layer],state[layer+1])+np.outer(stateFlip[layer],stateFlip[layer+1])
 
 class sdbm(object):
     """Simple Deep Boltzmann Machine (DBM)
@@ -166,44 +222,6 @@ class sdbm(object):
     def train(self,data):
         pass
 
-    def dedwDiff(self,state,layer,layerFlip,position):
-        """Compute the negative difference between dedw for a given state and 
-        dedw for a neighboring flipped state.
-
-        Parameters
-        ----------
-        state : array-like, shape (n_layers, n_units)
-            State of all the units
-
-        layer : int
-            Layer index for flipped state
-
-        position : int
-            Position in layer for flipped state
-        """
-        stateFlip = np.copy(state)
-        stateFlip[layerFlip,position] = int(not round(state[layerFlip,position]))
-        return -np.outer(state[layer],state[layer+1])+np.outer(stateFlip[layer],stateFlip[layer+1])
-    
-    def dedbDiff(self,state,layer,position):
-        """Compute the nevative difference between dedb for a given state and 
-        dedw for a neighboring flipped state.
-
-        Parameters
-        ----------
-        state : array-like, shape (n_layers, n_units)
-            State of all the units
-
-        layer : int
-            Layer index for flipped state
-
-        position : int
-            Position in layer for flipped state
-        """
-        stateFlip = np.copy(state)
-        stateFlip[layer,position] = int(not round(state[layer,position]))
-        return -state[layer]+stateFlip[layer]
-
     def eDiff(self,state,layerFlip,position):
         """Compute the difference between energy for a given state and 
         energy for a neighboring flipped state.
@@ -221,7 +239,7 @@ class sdbm(object):
         """
         stateFlip = np.copy(state)
         stateFlip[layerFlip,position] = int(not round(state[layerFlip,position]))
-        return self.energy(self.weights,self.bias,state)-self.energy(self.weights,self.bias,stateFlip)
+        return energy(self.weights,self.bias,state)-energy(self.weights,self.bias,stateFlip)
 
     def mpfTrain(self,vis,steps,eps,stepsSample):
         """Adjust weights/biases of the network to minimize probability flow, K via
@@ -255,15 +273,15 @@ class sdbm(object):
                 # For visible
                 # Gradient of flow w.r.t biases
                 for kk in xrange(self.n_units):
-                    db[0] += self.dedbDiff(state,0,kk)*np.exp(.5*(self.eDiff(state,0,kk)))
+                    db[0] += dedbDiff(state,0,kk)*np.exp(.5*(self.eDiff(state,0,kk)))
 
                 # Gradient of flow w.r.t. weights
                 for jj in xrange(self.n_layers-1):
                     for kk in xrange(self.n_units):
-                        dw[jj] += self.dedwDiff(state,jj,jj,kk)*np.exp(.5*(self.eDiff(state,jj,kk)))
+                        dw[jj] += dedwDiff(state,jj,jj,kk)*np.exp(.5*(self.eDiff(state,jj,kk)))
                         ep = self.eDiff(state,jj+1,kk)
-                        dw[jj] += self.dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
-                        db[jj+1] += self.dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
+                        dw[jj] += dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
+                        db[jj+1] += dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
 
             self.weights -= eps*dw/nData
             self.bias -= eps*db/nData
@@ -308,15 +326,15 @@ class sdbm(object):
                 # For visible
                 # Gradient of flow w.r.t biases
                 for kk in xrange(self.n_units):
-                    db[0] += self.dedbDiff(state,0,kk)*np.exp(.5*(self.eDiff(state,0,kk)))
+                    db[0] += dedbDiff(state,0,kk)*np.exp(.5*(self.eDiff(state,0,kk)))
 
                 # Gradient of flow w.r.t. weights
                 for jj in xrange(self.n_layers-1):
                     for kk in xrange(self.n_units):
-                        dw[jj] += self.dedwDiff(state,jj,jj,kk)*np.exp(.5*(self.eDiff(state,jj,kk)))
+                        dw[jj] += dedwDiff(state,jj,jj,kk)*np.exp(.5*(self.eDiff(state,jj,kk)))
                         ep = self.eDiff(state,jj+1,kk)
-                        dw[jj] += self.dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
-                        db[jj+1] += self.dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
+                        dw[jj] += dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
+                        db[jj+1] += dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
 
             self.weights -= eps*dw/nData
             self.bias -= eps*db/nData
@@ -350,8 +368,6 @@ class sdbm(object):
             terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
             curState[:,self.n_layers-1] = 1./(1+np.exp(-terms))
         return curState
-
-        
             
     def sampleHidden(self,vis,steps):
         """Sample from P(h|v) for the DBM via gibbs sampling for each
@@ -412,28 +428,11 @@ class sdbm(object):
             state = self.sampleHidden(vis, steps)
 
         return state
-
-    def energy(self,weights,bias,state):
-        """Calcluate energy of a DBM
-
-        Parameters
-        ----------
-        weights : array-like, shape (n_layers-1, n_units, n_units)
-
-        bias : array-like, shape (n_layers, n_units)
-
-        state : array-like, shape (n_layers, n_units)
-        """
-        negative_energy = (bias*state).sum()
-        for ii in xrange(self.n_layers-1):
-            negative_energy += state[ii].dot(weights[ii].dot(state[ii+1]))
-
-        return -negative_energy
     
     def curEnergy(self):
         """Calculate current energy of DBM
         """
-        return self.energy(self.weights,self.bias,self.state)
+        return energy(self.weights,self.bias,self.state)
 
     def scoreSamples(self, vis, n_samples, steps):
         """Evaluate the fitness of the model for a given dataset. Calculate
@@ -467,7 +466,7 @@ class sdbm(object):
                 # Set to P(v|h)
                 state[0] = vis[j]
                 # Normalized P(v|h)
-                p_v = np.exp(-self.energy(self.weights, self.bias, state)-log_z)
+                p_v = np.exp(-energy(self.weights, self.bias, state)-log_z)
                 average_p_v += p_v
 
         average_p_v /= n_samples*vis.shape[0]
