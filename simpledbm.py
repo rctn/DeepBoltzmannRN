@@ -134,7 +134,7 @@ def energy(weights,bias,state):
 
     return -negative_energy
 
-def dedbDiff(self,state,layer,position):
+def dedbDiff(state,layer,position):
     """Compute the nevative difference between dedb for a given state and 
     dedw for a neighboring flipped state.
 
@@ -153,7 +153,7 @@ def dedbDiff(self,state,layer,position):
     stateFlip[layer,position] = int(not round(state[layer,position]))
     return -state[layer]+stateFlip[layer]
 
-def dedwDiff(self,state,layer,layerFlip,position):
+def dedwDiff(state,layer,layerFlip,position):
     """Compute the negative difference between dedw for a given state and 
     dedw for a neighboring flipped state.
 
