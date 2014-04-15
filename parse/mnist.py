@@ -11,8 +11,22 @@ def load_data(dataset):
 
     Parameters
     ----------
-    dataset: string
+    dataset : string
         The path to the dataset (here MNIST)
+
+    Returns
+    -------
+    train_set : tuple
+        MNIST training set, first tuple is X with shape (n_samples, n_features),
+        second tuple are labels y with shape (n_samples)
+    
+    valid_set : tuple    
+        MNIST validation set, first tuple is X with shape (n_samples, n_features),
+        second tuple are labels y with shape (n_samples)
+
+    test_set : tuple
+        MNIST testing set, first tuple is X with shape (n_samples, n_features),
+        second tuple are labels y with shape (n_samples)
     """
 
     #############
@@ -58,6 +72,11 @@ def resize_data(data, output_image_shape):
 
     output_image_shape : tuple or ndarray
         Target image shape x_dim, y_dim
+
+    Returns
+    -------
+    rdata : array-like, shape (n_samples, n_features)
+        Output MNIST data with flattened target image dimensions
     """
     data = data.reshape(data.shape[0], np.sqrt(data.shape[1]), np.sqrt(data.shape[1]))
 
