@@ -2,6 +2,8 @@
 import os
 import gzip
 import cPickle
+import numpy as np
+import skimage.transform
 
 def load_data(dataset):
     """Loads the dataset. Snippets from:
@@ -10,7 +12,7 @@ def load_data(dataset):
     Parameters
     ----------
     dataset: string
-        the path to the dataset (here MNIST)
+        The path to the dataset (here MNIST)
     """
 
     #############
@@ -45,3 +47,22 @@ def load_data(dataset):
     #target to the example with the same index in the input.
 
     return train_set, valid_set, test_set
+
+def resize_data(data, output_image_shape):
+    """Resize the input MNIST data.
+
+    Parameters
+    ----------
+    data : array-like, shape (n_samples, n_features)
+        Input MNIST data with flattened image dimensions
+
+    output_image_shape : tuple or ndarray
+        Target image shape x_dim, y_dim
+    """
+    data = data.reshape(data.shape[0], np.sqrt(data.shape[1]), np.sqrt(data.shape[1]))
+
+    rdata = np.empty((data.shape[0], output_image_shape[0]*output_image_shape[1]), dtype=data.dtype)
+    for i in xrange(data.shape[0]):
+        rdata[i] = skimage.transform.resize(data[i], output_image_shape).reshape(rdata.shape[1])
+
+    return rdata
