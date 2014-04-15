@@ -3,7 +3,9 @@ from __future__ import print_function
 import numpy as np
 
 #Auxillary Functions
-def flow(params,*args):
+#########################################3
+#RBM functions for pretraining
+def flowRBM(params,*args):
     """MPF objective function for RBM. Used to pretrain DBM layers.
 
     Parameters
@@ -23,11 +25,11 @@ def flow(params,*args):
     weights = params[:n_units**2].reshape((n_units,n_units))
     biasv = params[n_units**2:n_units**2+n_units]
     biash = params[n_units**2+n_units:n_units**2+2*n_units]
-    sflow = np.sum([np.exp(.5*(energy(weights,biasv,biash,state)-energyBF(weights,biasv,biash,state,ii))) for ii in xrange(n_units)])
+    sflow = np.sum([np.exp(.5*(energyRBM(weights,biasv,biash,state)-energyRBMBF(weights,biasv,biash,state,ii))) for ii in xrange(n_units)])
     k = eps*sflow/n_data
     return k
 
-def gradFlow(params,*args):
+def gradFlowRBM(params,*args):
     """Gradient of MPF objective function for RBM. Used to pretrain DBM layers.
 
     Parameters
@@ -51,9 +53,9 @@ def gradFlow(params,*args):
     dkdbv = np.zeros_like(biasv)
     dkdbh = np.zeros_like(biash)
     for ii in xrange(n_units):
-        diffew = dedw(weights,biasv,biash,state)-dedwBF(weights,biasv,biash,state,ii)
-        diffebv = dedbv(weights,biasv,biash,state)-dedbvBF(weights,biasv,biash,state,ii)
-        diffebh = dedbh(weights,biasv,biash,state)-dedbhBF(weights,biasv,biash,state,ii)
+        diffew = dedwRBM(weights,biasv,biash,state)-dedwRBMBF(weights,biasv,biash,state,ii)
+        diffebv = dedbvRBM(weights,biasv,biash,state)-dedbvRBMBF(weights,biasv,biash,state,ii)
+        diffebh = dedbhRBM(weights,biasv,biash,state)-dedbhRBMBF(weights,biasv,biash,state,ii)
         diffe = np.exp(.5*(energyRBM(weights,biasv,biash,state)-energyRBMBF(weights,biasv,biash,state,ii)))
         dkdw += np.dot(np.transpose(diffew,axes=(1,2,0)),diffe)
         dkdbv += np.dot(diffebv.T,diffe)
@@ -92,30 +94,149 @@ def energyRBMBF(weights,biasv,biash,state,n):
     flip[:,n] = 1-flip[:,n]
     return energy(weights,biasv,biash,flip)
 
-def dedw(weights,biasv,biash,state):
+def dedwRBM(weights,biasv,biash,state):
     n_data = state.shape[0]
     return -np.array([np.outer(state[ii],sigm(biash+np.dot(state[ii],weights))) for ii in xrange(n_data)])
-def dedbv(weights,biasv,biash,state):
+
+def dedbvRBM(weights,biasv,biash,state):
     return -state
-def dedbh(weights,biasv,biash,state):
+
+def dedbhRBM(weights,biasv,biash,state):
     n_data = state.shape[0]
     return -sigm(np.tile(biash,(n_data,1))+np.dot(state,weights))
 
-def dedwBF(weights,biasv,biash,state,n):
+def dedwRBMBF(weights,biasv,biash,state,n):
     n_data = state.shape[0]
     flip = state.copy()
     flip[:,n] = 1-flip[:,n]
     return dedw(weights,biasv,biash,flip)
-def dedbvBF(weights,biasv,biash,state,n):
+
+def dedbvRBMBF(weights,biasv,biash,state,n):
     flip = state.copy()
     flip[:,n] = 1-flip[:,n]
     return dedbv(weights,biasv,biash,flip)
 
-def dedbhBF(weights,biasv,biash,state,n):
+def dedbhRBMBF(weights,biasv,biash,state,n):
     flip = state.copy()
     flip[:,n] = 1-flip[:,n]
     return dedbh(weights,biasv,biash,flip)
 
+#########################################################
+#DBM functions
+
+def energyV(weights,biases,states):
+    """Energy function for DBM, vectorized over different states
+
+    Parameters
+    ----------
+    weights : array-like, shape (n_layers,n_units,n_units)
+        Layer to layer weights
+
+    biases : array-like, shape (n_layers,n_units)
+        Biases for units
+
+    states : array-like, shape (n_data,n_layers,n_units)
+        Array of state to calculate energy for
+    """
+    negative_energy = np.einsum('ijk,jk',states,biases)
+    for ii in xrange(weights.shape[0]):
+        negative_energy += np.einsum('ij,jk,ik->i',states[:,ii],weights[ii],states[:,ii+1])
+    return -negative_energy
+
+def energyVBF(weights,biases,states,layer,n):
+    """Energy function for DBM, vectorized over different data states with 1 bit-flip
+
+    Parameters
+    ----------
+    weights : array-like, shape (n_layers,n_units,n_units)
+        Layer to layer weights
+
+    biases : array-like, shape (n_layers,n_units)
+        Biases for units
+
+    states : array-like, shape (n_data,n_layers,n_units)
+        Array of states to calculate energy for
+
+    layer : int
+        Which layer the bit-flip is in
+
+    n : int
+        Which unit the bit-flip is in
+    """
+    flip = states.copy()
+    flip[:,layer,n] = 1-flip[:,layer,n]
+    return energyV(weights,biases,flip)
+
+def dedw(weights,states,layer):
+    """Calcuates the derivative of the energy w.r.t the weights of a given layer
+
+    Parameters
+    ----------
+    weights : array-like, shape (n_layers,n_units,n_units)
+        Layer to layer weights
+
+    states : array-like, shape (n_data,n_layers,n_units)
+        Array of states to calculate energy for
+
+    layer : int
+        Which layer the weights are from
+    """
+    return -np.einsum('ij,ik->ijk',states[:,layer],states[:,layer+1]) 
+
+def dedb(states,layer):
+    """Calcuates the derivative of the energy w.r.t the biases of a given layer
+
+    Parameters
+    ----------
+    states : array-like, shape (n_data,n_layers,n_units)
+        Array of states to calculate energy for
+
+    layer : int
+        Which layer the weights are from
+    """
+    return -states[:,layer]
+
+def dedwBF(weights,states,layer,layerF,n):
+    """Calcuates the derivative of the energy w.r.t the weights of a given layer with one bit-flip
+
+    Parameters
+    ----------
+    weights : array-like, shape (n_layers,n_units,n_units)
+        Layer to layer weights
+
+    states : array-like, shape (n_data,n_layers,n_units)
+        Array of states to calculate energy for
+
+    layer : int
+        Which layer the weights are from
+
+    layerF : int
+        Which layer the bit-flip is in
+
+    n : int
+        Which unit the bit-flip is in
+    """
+    flip = states.copy()
+    flip[:,layerF,n] = 1-flip[:,layerF,n]
+    return dedw(weights,flip,layer)
+
+def dedbBF(states,layer,n):
+    """Calcuates the derivative of the energy w.r.t the biases of a given layer with one bit-flip
+
+    Parameters
+    ----------
+    states : array-like, shape (n_data,n_layers,n_units)
+        Array of states to calculate energy for
+
+    layer : int
+        Which layer the weights are from
+
+    n : int
+        Which unit the bit-flip is in
+    """
+    flip = states.copy()
+    flip[:,layer,n] = 1-flip[:,layer,n]
+    return dedb(flip,layer)
 
 def energy(weights,bias,state):
     """Calcluate energy of a DBM
@@ -315,26 +436,34 @@ class sdbm(object):
         # observed data)
 
         #Find meanfield estimates
-        fullState = np.around(self.ExHidden(vis,meanSteps))
+        fullStates = np.around(self.ExHidden(vis,meanSteps))
         if intOnly:
-            fullState = np.around(fullState)
+            fullStates = np.around(fullStates)
         for ii in xrange(steps):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
-            # Update weights and biases
-            for state in fullState:
-                # For visible
-                # Gradient of flow w.r.t biases
-                for kk in xrange(self.n_units):
-                    db[0] += dedbDiff(state,0,kk)*np.exp(.5*(self.eDiff(state,0,kk)))
 
-                # Gradient of flow w.r.t. weights
-                for jj in xrange(self.n_layers-1):
-                    for kk in xrange(self.n_units):
-                        dw[jj] += dedwDiff(state,jj,jj,kk)*np.exp(.5*(self.eDiff(state,jj,kk)))
-                        ep = self.eDiff(state,jj+1,kk)
-                        dw[jj] += dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
-                        db[jj+1] += dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
+            # For visible
+            # Gradient of flow w.r.t biases
+            for kk in xrange(self.n_units):
+                diffeb = dedb(fullStates,0)-dedbBF(fullStates,0,kk)
+                diffe = np.exp(.5*(energyV(self.weights,self.bias,fullStates)-energyVBF(self.weights,self.bias,fullStates,0,kk)))
+                db[0] += np.dot(diffeb.T,diffe)
+
+            # Gradient of flow w.r.t. weights and biases
+            for jj in xrange(self.n_layers-1):
+                for kk in xrange(self.n_units):
+                    #BF on lower layer
+                    diffew = dedw(self.weights,fullStates,jj)-dedwBF(self.weights,fullStates,jj,jj,kk)
+                    diffeL = np.exp(.5*(energyV(self.weights,self.bias,fullStates)-energyVBF(self.weights,self.bias,fullStates,jj,kk)))
+                    dw[jj] += np.einsum('ijk,i->jk',diffew,diffeL)
+                    #BF on upper layer
+                    diffew = dedw(self.weights,fullStates,jj)-dedwBF(self.weights,fullStates,jj,jj+1,kk)
+                    diffeU = np.exp(.5*(energyV(self.weights,self.bias,fullStates)-energyVBF(self.weights,self.bias,fullStates,jj+1,kk)))
+                    dw[jj] += np.einsum('ijk,i->jk',diffew,diffeU)
+
+                    diffeb = dedb(fullStates,jj+1)-dedbBF(fullStates,jj+1,kk)
+                    db[jj+1] += np.dot(diffeb.T,diffeU)
 
             self.weights -= eps*dw/nData
             self.bias -= eps*db/nData
@@ -367,6 +496,12 @@ class sdbm(object):
             # Apply mean field equations
             terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
             curState[:,self.n_layers-1] = 1./(1+np.exp(-terms))
+            # Find activations for internal layers going backwards
+            for jj in xrange(self.n_layers-2,0,-1):
+                # Apply mean field equations
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(curState[:,jj+1],self.weights[jj])
+                curState[:,jj] = 1./(1+np.exp(-terms))
+
         return curState
             
     def sampleHidden(self,vis,steps):
@@ -425,7 +560,7 @@ class sdbm(object):
         state = self.state.copy()
         for i in xrange(steps):
             vis = self.sampleVisible(state)
-            state = self.sampleHidden(vis, steps)
+            state = self.sampleHidden(vis,1)
 
         return state
     
