@@ -124,8 +124,8 @@ def dedbhRBMBF(weights,biasv,biash,state,n):
 #########################################################
 #DBM functions
 
-def energyV(weights,biases,states):
-    """Energy function for DBM, vectorized over different states
+def energyDiffV(weights,biases,states,layer,n):
+    """Energy difference function for DBM, vectorized over different states
 
     Parameters
     ----------
@@ -137,67 +137,26 @@ def energyV(weights,biases,states):
 
     states : array-like, shape (n_data,n_layers,n_units)
         Array of state to calculate energy for
-    """
-    negative_energy = np.einsum('ijk,jk',states,biases)
-    for ii in xrange(weights.shape[0]):
-        negative_energy += np.einsum('ij,jk,ik->i',states[:,ii],weights[ii],states[:,ii+1])
-    return -negative_energy
-
-def energyVBF(weights,biases,states,layer,n):
-    """Energy function for DBM, vectorized over different data states with 1 bit-flip
-
-    Parameters
-    ----------
-    weights : array-like, shape (n_layers,n_units,n_units)
-        Layer to layer weights
-
-    biases : array-like, shape (n_layers,n_units)
-        Biases for units
-
-    states : array-like, shape (n_data,n_layers,n_units)
-        Array of states to calculate energy for
 
     layer : int
-        Which layer the bit-flip is in
+        Layer for bit-flip
 
     n : int
-        Which unit the bit-flip is in
+        Unit for bit-flip
     """
     flip = states.copy()
     flip[:,layer,n] = 1-flip[:,layer,n]
-    return energyV(weights,biases,flip)
+    negative_energy = np.einsum('ijk,jk',states,biases)-np.einsum('ijk,jk',flip,biases)
+    for ii in xrange(weights.shape[0]):
+        #Data term
+        negative_energy += np.einsum('ij,jk,ik->i',states[:,ii],weights[ii],states[:,ii+1])
+        #Bit-flip term
+        negative_energy -= np.einsum('ij,jk,ik->i',flip[:,ii],weights[ii],flip[:,ii+1])
+    return -negative_energy
 
-def dedw(weights,states,layer):
-    """Calcuates the derivative of the energy w.r.t the weights of a given layer
-
-    Parameters
-    ----------
-    weights : array-like, shape (n_layers,n_units,n_units)
-        Layer to layer weights
-
-    states : array-like, shape (n_data,n_layers,n_units)
-        Array of states to calculate energy for
-
-    layer : int
-        Which layer the weights are from
-    """
-    return -np.einsum('ij,ik->ijk',states[:,layer],states[:,layer+1]) 
-
-def dedb(states,layer):
-    """Calcuates the derivative of the energy w.r.t the biases of a given layer
-
-    Parameters
-    ----------
-    states : array-like, shape (n_data,n_layers,n_units)
-        Array of states to calculate energy for
-
-    layer : int
-        Which layer the weights are from
-    """
-    return -states[:,layer]
-
-def dedwBF(weights,states,layer,layerF,n):
-    """Calcuates the derivative of the energy w.r.t the weights of a given layer with one bit-flip
+def dedwDiffV(weights,states,layer,layerF,n):
+    """Calcuates the difference in the derivative of the energy
+       w.r.t the weights of a given layer for a vector of states
 
     Parameters
     ----------
@@ -214,14 +173,14 @@ def dedwBF(weights,states,layer,layerF,n):
         Which layer the bit-flip is in
 
     n : int
-        Which unit the bit-flip is in
+        Which unit to bit-flip
     """
     flip = states.copy()
     flip[:,layerF,n] = 1-flip[:,layerF,n]
-    return dedw(weights,flip,layer)
+    return -(np.einsum('ij,ik->ijk',states[:,layer],states[:,layer+1])-np.einsum('ij,ik->ijk',flip[:,layer],flip[:,layer+1]))
 
-def dedbBF(states,layer,n):
-    """Calcuates the derivative of the energy w.r.t the biases of a given layer with one bit-flip
+def dedbDiffV(states,layer,n):
+    """Calcuates the derivative of the energy w.r.t the biases of a given layer
 
     Parameters
     ----------
@@ -232,11 +191,11 @@ def dedbBF(states,layer,n):
         Which layer the weights are from
 
     n : int
-        Which unit the bit-flip is in
+        Unit to bit-flip
     """
     flip = states.copy()
     flip[:,layer,n] = 1-flip[:,layer,n]
-    return dedb(flip,layer)
+    return -(states[:,layer]-flip[:,layer])
 
 def energy(weights,bias,state):
     """Calcluate energy of a DBM
@@ -446,24 +405,24 @@ class sdbm(object):
             # For visible
             # Gradient of flow w.r.t biases
             for kk in xrange(self.n_units):
-                diffeb = dedb(fullStates,0)-dedbBF(fullStates,0,kk)
-                diffe = np.exp(.5*(energyV(self.weights,self.bias,fullStates)-energyVBF(self.weights,self.bias,fullStates,0,kk)))
+                diffeb = dedbDiffV(fullStates,0,kk)
+                diffe = np.exp(.5*energyDiffV(self.weights,self.bias,fullStates,0,kk))
                 db[0] += np.dot(diffeb.T,diffe)
 
             # Gradient of flow w.r.t. weights and biases
             for jj in xrange(self.n_layers-1):
                 for kk in xrange(self.n_units):
                     #BF on lower layer
-                    diffew = dedw(self.weights,fullStates,jj)-dedwBF(self.weights,fullStates,jj,jj,kk)
-                    diffeL = np.exp(.5*(energyV(self.weights,self.bias,fullStates)-energyVBF(self.weights,self.bias,fullStates,jj,kk)))
-                    dw[jj] += np.einsum('ijk,i->jk',diffew,diffeL)
+                    diffew = dedwDiffV(self.weights,fullStates,jj,jj,kk)
+                    diffe = np.exp(.5*energyDiffV(self.weights,self.bias,fullStates,jj,kk))
+                    dw[jj] += np.einsum('ijk,i->jk',diffew,diffe)
                     #BF on upper layer
-                    diffew = dedw(self.weights,fullStates,jj)-dedwBF(self.weights,fullStates,jj,jj+1,kk)
-                    diffeU = np.exp(.5*(energyV(self.weights,self.bias,fullStates)-energyVBF(self.weights,self.bias,fullStates,jj+1,kk)))
-                    dw[jj] += np.einsum('ijk,i->jk',diffew,diffeU)
+                    diffew = dedwDiffV(self.weights,fullStates,jj,jj+1,kk)
+                    diffe = np.exp(.5*energyVBF(self.weights,self.bias,fullStates,jj+1,kk))
+                    dw[jj] += np.einsum('ijk,i->jk',diffew,diffe)
 
-                    diffeb = dedb(fullStates,jj+1)-dedbBF(fullStates,jj+1,kk)
-                    db[jj+1] += np.dot(diffeb.T,diffeU)
+                    diffeb = dedbDiffV(fullStates,jj+1,kk)
+                    db[jj+1] += np.dot(diffeb.T,diffe)
 
             self.weights -= eps*dw/nData
             self.bias -= eps*db/nData
