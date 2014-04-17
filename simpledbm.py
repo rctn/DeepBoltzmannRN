@@ -402,30 +402,48 @@ class sdbm(object):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
 
-            # For visible
+            # For visible bit-flips
             # Gradient of flow w.r.t biases
             for kk in xrange(self.n_units):
-                diffeb = dedbDiffV(fullStates,0,kk)
-                diffe = np.exp(.5*energyDiffV(self.weights,self.bias,fullStates,0,kk))
-                db[0] += np.dot(diffeb.T,diffe)
-
+                layer_n = 0
+                diffe = np.exp(.5*energyDiffV(self.weights,self.bias,fullStates,layer_n,kk))
+                #Update b[layer_n]
+                diffeb = dedbDiffV(fullStates,layer_n,kk)
+                db[layer_n] += np.dot(diffeb.T,diffe)
+                #Update w[layer_n]
+                diffew = dedwDiffV(self.weights,fullStates,layer_n,layer_n,kk)
+                dw[layer_n] += np.einsum('ijk,i->jk',diffew,diffe)
+            #For inner-layer bit-flips
             # Gradient of flow w.r.t. weights and biases
-            for jj in xrange(self.n_layers-1):
-                for kk in xrange(self.n_units):
-                    #BF on lower layer
-                    diffew = dedwDiffV(self.weights,fullStates,jj,jj,kk)
-                    diffe = np.exp(.5*energyDiffV(self.weights,self.bias,fullStates,jj,kk))
-                    dw[jj] += np.einsum('ijk,i->jk',diffew,diffe)
-                    #BF on upper layer
-                    diffew = dedwDiffV(self.weights,fullStates,jj,jj+1,kk)
-                    diffe = np.exp(.5*energyVBF(self.weights,self.bias,fullStates,jj+1,kk))
-                    dw[jj] += np.einsum('ijk,i->jk',diffew,diffe)
+            if self.n_layers > 2:
+                for jj in xrange(1,self.n_layers-1):
+                    for kk in xrange(self.n_units):
+                        layer_n = jj
+                        layer_n = self.n_layers-1
+                        diffe = np.exp(.5*energyDiffV(self.weights,self.bias,fullStates,layer_n,kk))
+                        #Update b[layer_n]
+                        diffeb = dedbDiffV(fullStates,layer_n,kk)
+                        db[layer_n] += np.dot(diffeb.T,diffe)
+                        #Update b[layer_n]
+                        diffew = dedwDiffV(self.weights,fullStates,layer_n,layer_n,kk)
+                        dw[layer_n] += np.einsum('ijk,i->jk',diffew,diffe)
+                        #Update b[layer_n]
+                        diffew = dedwDiffV(self.weights,fullStates,layer_n-1,layer_n,kk)
+                        dw[layer_n-1] += np.einsum('ijk,i->jk',diffew,diffe)
+            # For top layer bit-flips
+            # Gradient of flow w.r.t biases
+            for kk in xrange(self.n_units):
+                layer_n = self.n_layers-1
+                diffe = np.exp(.5*energyDiffV(self.weights,self.bias,fullStates,layer_n,kk))
+                #Update b[layer_n]
+                diffeb = dedbDiffV(fullStates,layer_n,kk)
+                db[layer_n] += np.dot(diffeb.T,diffe)
+                #Update w[layer_n-1]
+                diffew = dedwDiffV(self.weights,fullStates,layer_n-1,layer_n,kk)
+                dw[layer_n-1] += np.einsum('ijk,i->jk',diffew,diffe)
 
-                    diffeb = dedbDiffV(fullStates,jj+1,kk)
-                    db[jj+1] += np.dot(diffeb.T,diffe)
-
-            self.weights -= eps*dw/nData
-            self.bias -= eps*db/nData
+            self.weights -= eps*dw/float(nData)
+            self.bias -= eps*db/float(nData)
 
     def ExHidden(self,vis,meanSteps):
         """Finds Expectation for hidden units using mean-field variational approach
@@ -568,13 +586,15 @@ class sdbm(object):
 
     def getWeights(self):
         return self.weights
-    def getBias(self):
+    def getBiases(self):
         return self.bias
     def getState(self):
         return self.state
-    def setWeights(self):
+    def setWeights(self,weights):
+        if self.weights.shape == weights.shape:
+            self.weights.shape = weights
         pass
-    def setBias(self):
+    def setBiases(self):
         pass
     def setState(self):
         pass
