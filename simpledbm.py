@@ -404,26 +404,31 @@ class sdbm(object):
             for layer_i in xrange(self.n_layers):
                 for unit_i in xrange(self.n_units):
                     originalState = fullStates[:,layer_i,unit_i]
-                    flippedState = 1-fullStates[:,layer_i,unit_i]
+                    flippedState = 1.-fullStates[:,layer_i,unit_i]
 
                     diffe = -originalState*self.bias[layer_i,unit_i]+flippedState*self.bias[layer_i,unit_i]
-                    if layer_i < (self.n_layers-1):
-                        Wh = self.weights[layer_i,unit_i].dot(fullStates[:,layer_i+1].T)
-                        vWh = originalState*Wh
-                        vfWh = flippedState*Wh
-                        diffe += -vWh+vfWh
 
+                    # All layers except top
+                    if layer_i < (self.n_layers-1):
+                        W_h = self.weights[layer_i,unit_i].dot(fullStates[:,layer_i+1].T)
+                        vT_W_h = originalState*W_h
+                        vfT_W_h = flippedState*W_h
+                        diffe += -vT_W_h+vfT_W_h
+
+                    # All layers except bottom (visible)
                     if layer_i > 0:
-                        vW = fullStates[:,layer_i-1].dot(self.weights[layer_i-1,:,unit_i])
-                        vWh = vW*originalState
-                        vWhf = vW*flippedState
-                        diffe += -vWh+vWhf
+                        vT_W = fullStates[:,layer_i-1].dot(self.weights[layer_i-1,:,unit_i])
+                        vT_W_h = vT_W*originalState
+                        vT_W_hf = vT_W*flippedState
+                        diffe += -vT_W_h+vT_W_hf
 
                     diffe = np.exp(.5*(diffe))
-                    
+
+                    # Bias update
                     diffeb = -(originalState-flippedState)
                     db[layer_i,unit_i] += diffeb.dot(diffe)
 
+                    # Weights update
                     if layer_i < (self.n_layers-1):
                         diffew = -(np.einsum('i,ij->ij',originalState,fullStates[:,layer_i+1])-
                                     np.einsum('i,ij->ij',flippedState,fullStates[:,layer_i+1]))
