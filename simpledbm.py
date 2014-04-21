@@ -288,7 +288,9 @@ class sdbm(object):
         else:
             self.weights = weights
         if bias is None:
-            self.bias = np.zeros((n_layers,n_units))
+            self.bias = rng.uniform(low=-4 * np.sqrt(6. / (n_layers*n_units)),
+                                    high=4 * np.sqrt(6. / (n_layers*n_units)),
+                                    size=(n_layers,n_units))
         else:
             self.bias = bias
         if state is None:
