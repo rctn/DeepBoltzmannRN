@@ -495,17 +495,25 @@ class sdbm(object):
         stateUp = np.copy(self.state)
         stateUp[0] = vis
         for ii in xrange(steps):
-            rands = self.rng.rand(self.n_layers-1,self.n_units)
+            rands = self.rng.rand(2,self.n_layers-1,self.n_units)
+            # Sample bottom layers going up
             for jj in xrange(1,self.n_layers-1):
                 terms = self.bias[jj] + self.weights[jj-1].dot(stateUp[jj-1]) + self.weights[jj].T.dot(stateUp[jj+1])
                 probs = 1/(1+np.exp(-terms))
-                stateUp[jj] = rands[jj-1] <= probs
+                stateUp[jj] = rands[0,jj-1] <= probs
 
-            # Sampling for the top layer
-            top = self.n_layers-1
-            terms = self.bias[top] + self.weights[top-1].dot(stateUp[top-1])
-            probs = 1/(1+np.exp(-terms))
-            stateUp[top] = rands[top-1] <= probs
+            # Double sampling for the top layer, before going back down
+            for jj in xrange(2):
+                top = self.n_layers-1
+                terms = self.bias[top] + self.weights[top-1].dot(stateUp[top-1])
+                probs = 1/(1+np.exp(-terms))
+                stateUp[top] = rands[jj,top-1] <= probs
+
+            # Sample bottom hidden layers going down
+            for jj in xrange(self.n_layers-2,0,-1):
+                terms = self.bias[jj] + self.weights[jj-1].dot(stateUp[jj-1]) + self.weights[jj].T.dot(stateUp[jj+1])
+                probs = 1/(1+np.exp(-terms))
+                stateUp[jj] = rands[1,jj-1] <= probs
 
         return stateUp
 
