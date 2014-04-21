@@ -282,11 +282,13 @@ class sdbm(object):
         self.rng = rng
 
         if weights is None:
-            self.weights = rng.randn(n_layers-1,n_units,n_units)
+            self.weights = rng.uniform(low=-4 * np.sqrt(6. / (n_layers*n_units)),
+                                        high=4 * np.sqrt(6. / (n_layers*n_units)),
+                                        size=(n_layers-1,n_units,n_units))
         else:
             self.weights = weights
         if bias is None:
-            self.bias = rng.randn(n_layers,n_units)
+            self.bias = np.zeros((n_layers,n_units))
         else:
             self.bias = bias
         if state is None:
@@ -387,8 +389,6 @@ class sdbm(object):
         intOnly : boolean, optional
             Round mean-field values to binary
         """
-        if intOnly is None:
-            intOnly = False
         nData = vis.shape[0]
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
@@ -397,10 +397,10 @@ class sdbm(object):
         fullStates = self.ExHidden(vis,meanSteps)
         if intOnly:
             fullStates = np.around(fullStates)
+
         for ii in xrange(steps):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
-
             for layer_i in xrange(self.n_layers):
                 for unit_i in xrange(self.n_units):
                     originalState = fullStates[:,layer_i,unit_i]
@@ -421,24 +421,24 @@ class sdbm(object):
                         vT_W_h = vT_W*originalState
                         vT_W_hf = vT_W*flippedState
                         diffe += -vT_W_h+vT_W_hf
-
+                    # import ipdb; ipdb.set_trace()
                     diffe = np.exp(.5*(diffe))
 
                     # Bias update
-                    diffeb = -(originalState-flippedState)
+                    diffeb = -originalState+flippedState
                     db[layer_i,unit_i] += diffeb.dot(diffe)
 
                     # Weights update
                     if layer_i < (self.n_layers-1):
-                        diffew = -(np.einsum('i,ij->ij',originalState,fullStates[:,layer_i+1])-
-                                    np.einsum('i,ij->ij',flippedState,fullStates[:,layer_i+1]))
-                        dw[layer_i,unit_i] += diffew.sum(0)
+                        diffew = -np.einsum('i,ij->ij',originalState,fullStates[:,layer_i+1])+ \
+                                    np.einsum('i,ij->ij',flippedState,fullStates[:,layer_i+1])
+                        dw[layer_i,unit_i] += np.einsum('i,ij->j',diffe,diffew)
 
                     if layer_i > 0:
-                        diffew = -(np.einsum('ij,i->ij',fullStates[:,layer_i-1],originalState)-
-                                    np.einsum('ij,i->ij',fullStates[:,layer_i-1],flippedState))
-                        dw[layer_i-1,:,unit_i] += diffew.sum(0)
-
+                        diffew = -np.einsum('ij,i->ij',fullStates[:,layer_i-1],originalState)+ \
+                                    np.einsum('ij,i->ij',fullStates[:,layer_i-1],flippedState)
+                        dw[layer_i-1,:,unit_i] += np.einsum('i,ij->j',diffe,diffew)
+            
             self.weights -= eps*dw/float(nData)
             self.bias -= eps*db/float(nData)
 
