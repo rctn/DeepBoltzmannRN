@@ -16,15 +16,17 @@ def flowRBM(params,*args):
         vectors of visible states to learn on.
     """
     eps = args[0]
-    state = args[1]
+    data = args[1]
     n_visible = args[2]
     n_hidden = args[3]
     layer = args[4]
-    n_data = state.shape[0]
-    weights = params[:n_units**2].reshape((n_units,n_units))
-    biasv = params[n_units**2:n_units**2+n_units]
-    biash = params[n_units**2+n_units:n_units**2+2*n_units]
-    sflow = np.sum([np.exp(.5*(energyRBM(weights,biasv,biash,state)-energyRBMBF(weights,biasv,biash,state,ii))) for ii in xrange(n_units)])
+    n_data = data.shape[0]
+    num = n_visible*n_hidden
+    weights = params[:num].reshape((n_visible,n_hidden))
+    biasv = params[num:num+n_visible]
+    num += n_visible
+    biash = params[num:num+n_hidden]
+    sflow = np.sum([np.exp(.5*(energydiff(weights,biasv,biash,state,ii))) for ii in xrange(n_units)])
     k = eps*sflow/n_data
     return k
 
@@ -51,7 +53,7 @@ def gradFlowRBM(params,*args):
     dkdw = np.zeros_like(weights)
     dkdbv = np.zeros_like(biasv)
     dkdbh = np.zeros_like(biash)
-    for ii in xrange(n_units):
+    for ii in xrange(n_visible):
         diffew = dedwRBM(weights,biasv,biash,state)-dedwRBMBF(weights,biasv,biash,state,ii)
 	diffebv = dedbvRBM(weights,biasv,biash,state)-dedbvRBMBF(weights,biasv,biash,state,ii)
 	diffebh = dedbhRBM(weights,biasv,biash,state)-dedbhRBMBF(weights,biasv,biash,state,ii)
@@ -62,7 +64,7 @@ def gradFlowRBM(params,*args):
     return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
 
 
-def energyRBM(weights,biasv,biash,state):
+def energydiff(weights,biasv,biash,data,n):
     """Energy function for RBM
     
     Parameters
@@ -76,40 +78,33 @@ def energyRBM(weights,biasv,biash,state):
     biash : array-like, shape n_units
         Biases for hidden units
     """
-    logTerm = np.sum(np.log(1.+np.exp(biash+np.dot(state,weights))),axis=1)
-    return -np.dot(state,biasv)-logTerm
+    flip = data.copy()
+    flip[:,n] = 1-flip[:,n]
+    logTerm = np.sum(np.log(1.+np.exp(biash+np.dot(data,weights))),axis=1)
+    logTermBF = np.sum(np.log(1.+np.exp(biash+flip.dot(weights))),axis=1)
+    return (-data.dot(biasv)-logTerm)-(flip.dot(biasv)-logTermBF)
 
-def energyRBMBF(weights,biasv,biash,state,n):
+def dedwdiff(weights,biash,data,n):
+    n_data = data.shape[0]
+    flip = data.copy()
+    flip[:,n] = 1-flip[:,n]
+    dedw = -np.array([np.outer(data[ii],sigm(biash+state[ii].dot(weights))) for ii in xrange(n_data)])
+    dedwBF = -np.array([np.outer(flip[ii],sigm(biash+flip[ii].dot(weights))) for ii in xrange(n_data)])
+    return dedw-dedwBF
+
+def dedbvdiff(data,n):
     flip = state.copy()
     flip[:,n] = 1-flip[:,n]
-    return energy(weights,biasv,biash,flip)
+    return (-state)-(-flip)
 
-def dedwRBM(weights,biasv,biash,state):
+def dedbhdiff(weights,biash,state,n):
     n_data = state.shape[0]
-    return -np.array([np.outer(state[ii],sigm(biash+np.dot(state[ii],weights))) for ii in xrange(n_data)])
-
-def dedbvRBM(weights,biasv,biash,state):
-    return -state
-
-def dedbhRBM(weights,biasv,biash,state):
-    n_data = state.shape[0]
-    return -sigm(np.tile(biash,(n_data,1))+np.dot(state,weights))
-
-def dedwRBMBF(weights,biasv,biash,state,n):
-    n_data = state.shape[0]
     flip = state.copy()
     flip[:,n] = 1-flip[:,n]
-    return dedw(weights,biasv,biash,flip)
+    dedbh = -sigm(np.tile(biash,(n_data,1))+data.dot(weights))
+    dedbhBF = -sigm(np.tile(biash,(n_data,1))+flip.dot(weights))
+    return dedbh-dedbhBF
 
-def dedbvRBMBF(weights,biasv,biash,state,n):
-    flip = state.copy()
-    flip[:,n] = 1-flip[:,n]
-    return dedbv(weights,biasv,biash,flip)
-
-def dedbhRBMBF(weights,biasv,biash,state,n):
-    flip = state.copy()
-    flip[:,n] = 1-flip[:,n]
-    return dedbh(weights,biasv,biash,flip)
 def sigm(x):
     """Sigmoid function
 
