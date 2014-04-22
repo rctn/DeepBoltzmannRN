@@ -2,65 +2,6 @@ from __future__ import division
 from __future__ import print_function
 import numpy as np
 
-#Auxillary Functions
-#########################################3
-#RBM functions for pretraining
-def flowRBM(params,*args):
-    """MPF objective function for RBM. Used to pretrain DBM layers.
-
-    Parameters
-    ----------
-    params : array-like, shape (n_units^2+2*n_units)
-        Weights (flattened), visible biases, and hidden biases.
-
-    *args : tuple or list or args
-       Expects eps which is coefficient for MPF and state which is a
-       vectors of visible states to learn on.
-    """
-    eps = args[0]
-    state = args[1]
-    n_total = params.shape[0]
-    n_units = int(np.sqrt(1+n_total)-1)
-    n_data = state.shape[0]
-    weights = params[:n_units**2].reshape((n_units,n_units))
-    biasv = params[n_units**2:n_units**2+n_units]
-    biash = params[n_units**2+n_units:n_units**2+2*n_units]
-    sflow = np.sum([np.exp(.5*(energyRBM(weights,biasv,biash,state)-energyRBMBF(weights,biasv,biash,state,ii))) for ii in xrange(n_units)])
-    k = eps*sflow/n_data
-    return k
-
-def gradFlowRBM(params,*args):
-    """Gradient of MPF objective function for RBM. Used to pretrain DBM layers.
-
-    Parameters
-    ----------
-    params : array-like, shape (n_units^2+2*n_units)
-        Weights (flattened), visible biases, and hidden biases.
-
-    *args : tuple or list or args
-       Expects eps which is coefficient for MPF and state which is a
-       vectors of visible states to learn on.
-    """
-    eps = args[0]
-    state = args[1]
-    n_data = state.shape[0]
-    n_total = params.shape[0]
-    n_units = int(np.sqrt(1+n_total)-1)
-    weights = params[:n_units**2].reshape((n_units,n_units))
-    biasv = params[n_units**2:n_units**2+n_units]
-    biash = params[n_units**2+n_units:n_units**2+2*n_units]
-    dkdw = np.zeros_like(weights)
-    dkdbv = np.zeros_like(biasv)
-    dkdbh = np.zeros_like(biash)
-    for ii in xrange(n_units):
-        diffew = dedwRBM(weights,biasv,biash,state)-dedwRBMBF(weights,biasv,biash,state,ii)
-        diffebv = dedbvRBM(weights,biasv,biash,state)-dedbvRBMBF(weights,biasv,biash,state,ii)
-        diffebh = dedbhRBM(weights,biasv,biash,state)-dedbhRBMBF(weights,biasv,biash,state,ii)
-        diffe = np.exp(.5*(energyRBM(weights,biasv,biash,state)-energyRBMBF(weights,biasv,biash,state,ii)))
-        dkdw += np.dot(np.transpose(diffew,axes=(1,2,0)),diffe)
-        dkdbv += np.dot(diffebv.T,diffe)
-        dkdbh += np.dot(diffebh.T,diffe)
-    return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
 
 def sigm(x):
     """Sigmoid function
@@ -71,55 +12,6 @@ def sigm(x):
         Array of elements to calculate sigmoid for.
     """
     return 1./(1+np.exp(-x))
-
-def energyRBM(weights,biasv,biash,state):
-    """Energy function for RBM
-
-    Parameters
-    ----------
-    weights : array-like, shape (n_units,n_units)
-        Visble to hidden weights
-
-    biasv : array-like, shape n_units
-        Biases for visible units
-
-    biash : array-like, shape n_units
-        Biases for hidden units
-    """
-    logTerm = np.sum(np.log(1.+np.exp(biash+np.dot(state,weights))),axis=1)
-    return -np.dot(state,biasv)-logTerm
-
-def energyRBMBF(weights,biasv,biash,state,n):
-    flip = state.copy()
-    flip[:,n] = 1-flip[:,n]
-    return energy(weights,biasv,biash,flip)
-
-def dedwRBM(weights,biasv,biash,state):
-    n_data = state.shape[0]
-    return -np.array([np.outer(state[ii],sigm(biash+np.dot(state[ii],weights))) for ii in xrange(n_data)])
-
-def dedbvRBM(weights,biasv,biash,state):
-    return -state
-
-def dedbhRBM(weights,biasv,biash,state):
-    n_data = state.shape[0]
-    return -sigm(np.tile(biash,(n_data,1))+np.dot(state,weights))
-
-def dedwRBMBF(weights,biasv,biash,state,n):
-    n_data = state.shape[0]
-    flip = state.copy()
-    flip[:,n] = 1-flip[:,n]
-    return dedw(weights,biasv,biash,flip)
-
-def dedbvRBMBF(weights,biasv,biash,state,n):
-    flip = state.copy()
-    flip[:,n] = 1-flip[:,n]
-    return dedbv(weights,biasv,biash,flip)
-
-def dedbhRBMBF(weights,biasv,biash,state,n):
-    flip = state.copy()
-    flip[:,n] = 1-flip[:,n]
-    return dedbh(weights,biasv,biash,flip)
 
 #########################################################
 #DBM functions
@@ -599,10 +491,17 @@ class sdbm(object):
         return self.state
     def setWeights(self,weights):
         if self.weights.shape == weights.shape:
-            self.weights.shape = weights
-        pass
-    def setBiases(self):
-        pass
-    def setState(self):
-        pass
+            self.weights = weights
+        else:
+            raise ValueError
+    def setBiases(self,bias):
+        if self.bias.shape == bias.shape:
+            self.bias = bias
+        else:
+            raise ValueError
+    def setState(self,state):
+        if self.state.shape == state.shape:
+            self.state = state
+        else:
+            raise ValueError
 
