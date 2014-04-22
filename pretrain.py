@@ -3,7 +3,7 @@ from __future__ import print_function
 import numpy as np
 from scipy.optimize import minimize
 
-def flowRBM(params,*args):
+def flow(params,*args):
     """MPF objective function for RBM. Used to pretrain DBM layers.
 
     Parameters
@@ -29,7 +29,7 @@ def flowRBM(params,*args):
     k = eps*sflow/n_data
     return k
 
-def gradFlowRBM(params,*args):
+def gradFlow(params,*args):
     """Gradient of MPF objective function for RBM. Used to pretrain DBM layers.
 
     Parameters
@@ -113,10 +113,11 @@ def sigm(x):
     """
     return 1./(1+np.exp(-x))
 
-class pretrainRBM(object):
+class preBM(object):
     """RBM object used to pretrain a DBM layer"""
 
     def __init__(self,n_visible,n_hidden,layer,rng):
+        
         if layer == 'bottom':
             self.n_visible = 2*n_visible
             self.n_hidden = n_hidden
@@ -153,18 +154,54 @@ class pretrainRBM(object):
             self.biash[:num] = biash 
             self.biash[num:] = biash
 
-    def trainRBM(self,eps,data):
+    def train(self,eps,data):
         if self.layer == 'bottom':
             states = np.tile(data,(1,2))
         else:
             states = data
         params = np.concatenate((self.weights.flatten(),self.biasv,self.biash))
-        params = minimize(flowRBM,params,jac=gradFlowRBM,args=(eps,states,self.n_visible,self.n_hidden)).x
+        params = minimize(flow,params,jac=gradFlow,args=(eps,states,self.n_visible,self.n_hidden)).x
         num = self.n_visible*self.n_hidden
         self.weights = params[:num].reshape(self.n_visible,self.n_hidden)
         self.biasv = params[num:num+self.n_visible]
         num += self.n_visible
         self.biash = params[num:]
         self.constrainWeights()
-        return (self.weights,self.biasv,self.biash)
+        if self.layer == 'bottom':
+            weights = self.weights[:int(self.n_visible/2)]
+            biasv = self.biasv[:int(self.n_visible/2)]
+            biash = self.biash
+        elif self.layer == 'middle':
+            weights = self.weights/2.
+            biasv = self.biasv
+            biash = self.biash
+        elif self.layer == 'top':
+            weights = self.weights[:,:int(self.n_hidden/2)]
+            biasv = self.biasv
+            biash = self.biash[:int(self.n_hidden/2)]
+        else:
+            raise ValueError
+        return (weights,biasv,biash)
 
+    def nextActivation(self,data,steps):
+        n_data = data.shape[0]
+        if self.layer == 'bottom':
+            n_units = self.n_hidden
+            weights = self.weights[:int(self.n_visible/2)]
+            biash = self.biash
+        elif self.layer == 'middle':
+            n_units = self.n_visible
+            weights = self.weights/2.
+        elif self.layer == 'top':
+            n_units = self.n_visible
+            weights = self.weights[:,:int(self.n_hidden/2)]
+            biash = self.biash[:int(self.n_hidden/2)]
+        else:
+            raise ValueError
+        hidden_state = rng.randn(n_data,n_units)
+        for ii in xrange(steps):
+            terms = np.tile(bias,(n_data,1))+data.dot(weights)
+        return sigm(terms)
+
+
+    

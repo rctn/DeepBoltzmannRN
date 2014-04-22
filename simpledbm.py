@@ -1,5 +1,6 @@
 from __future__ import division
 from __future__ import print_function
+import pretrain
 import numpy as np
 
 
@@ -193,10 +194,38 @@ class sdbm(object):
         self.n_layers = n_layers
         self.n_units = n_units
 
-    def pretrain(self,vis,steps,eps):
-        pass
-    def train(self,data):
-        pass
+    def pretrain(self,vis,eps):
+        """Trains each layer with a modified RBM
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data,n_units)
+            Array of training data
+
+        eps : float
+            coefficient for MPF
+        """
+        # Train bottom layer
+        rbm = pretrain.rbm(self.n_units,self.n_units,'bottom',self.rng)
+        weights,biasv,biash = rbm.train(eps,vis)
+        self.weights[0] = weights
+        self.bias[0] = biasv
+        self.bias[1] = biash
+        newStates = rbm.nextActivation(vis)
+        # Train middle layers
+        if self.n_layers > 2:
+            for ii in xrange(1,self.n_layers-2):
+                rbm = pretrain.rbm(self.n_units,self.n_units,'middle',self.rng)
+                weights,biasv,biash = rbm.train(eps,newStates)
+                self.weights[ii] = weights
+                self.bias[ii+1] = biasv
+                newStates = rbm.nextActivation(newStates)
+        # Train top layer
+        rbm = pretrain.rbm(self.n_units,self.n_units,'top',self.rng)
+        weights,biasv,biash = rbm.train(eps,newStates)
+        self.weights[self.n_layers-1] = weights
+        self.bias[self.n_layers] = biash
+
 
     def eDiff(self,state,layerFlip,position):
         """Compute the difference between energy for a given state and 
@@ -217,7 +246,7 @@ class sdbm(object):
         stateFlip[layerFlip,position] = int(not round(state[layerFlip,position]))
         return energy(self.weights,self.bias,state)-energy(self.weights,self.bias,stateFlip)
 
-    def mpfTrain(self,vis,steps,eps,stepsSample):
+    def mpfTrain(self,vis,steps,eps,alpha,stepsSample):
         """Adjust weights/biases of the network to minimize probability flow, K via
         gradient descent.
 
@@ -259,10 +288,10 @@ class sdbm(object):
                         dw[jj] += dedwDiff(state,jj,jj+1,kk)*np.exp(.5*(ep))
                         db[jj+1] += dedbDiff(state,jj+1,kk)*np.exp(.5*(ep))
 
-            self.weights -= eps*dw/nData
-            self.bias -= eps*db/nData
+            self.weights -= alpha*eps*dw/nData
+            self.bias -= alpha*eps*db/nData
 
-    def ExTrain(self,vis,steps,eps,meanSteps,intOnly=False):
+    def ExTrain(self,vis,steps,eps,alpha,meanSteps,intOnly=False):
         """Adjust weights/biases of the network to minimize probability flow, K via
         gradient descent.
 
@@ -333,8 +362,8 @@ class sdbm(object):
                                     np.einsum('ij,i->ij',fullStates[:,layer_i-1],flippedState)
                         dw[layer_i-1,:,unit_i] += np.einsum('i,ij->j',diffe,diffew)
             
-            self.weights -= eps*dw/float(nData)
-            self.bias -= eps*db/float(nData)
+            self.weights -= alpha*eps*dw/float(nData)
+            self.bias -= alpha*eps*db/float(nData)
 
     def ExHidden(self,vis,meanSteps):
         """Finds Expectation for hidden units using mean-field variational approach
@@ -348,7 +377,7 @@ class sdbm(object):
             Number of mean-field steps to cycle through
 
         updateSteps : int
-            Number of times to run through layers. Must be >=2 for any top down feedback
+            Number of times to run through layers.
         """
         curState = np.zeros((vis.shape[0],self.n_layers,self.n_units))
         # Initialize state to visible and zeros
@@ -359,16 +388,16 @@ class sdbm(object):
             for jj in xrange(1,self.n_layers-1):
                 # Apply mean field equations
                 terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(curState[:,jj+1],self.weights[jj])
-                curState[:,jj] = 1./(1+np.exp(-terms))
+                curState[:,jj] = sigm(terms)
             # Find activation for top layer
             # Apply mean field equations
             terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
-            curState[:,self.n_layers-1] = 1./(1+np.exp(-terms))
+            curState[:,self.n_layers-1] = sigm(terms)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
                 # Apply mean field equations
                 terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(curState[:,jj+1],self.weights[jj])
-                curState[:,jj] = 1./(1+np.exp(-terms))
+                curState[:,jj] = sigm(terms)
 
         return curState
             
