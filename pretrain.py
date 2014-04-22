@@ -113,7 +113,7 @@ def sigm(x):
     """
     return 1./(1+np.exp(-x))
 
-class preBM(object):
+class preRBM(object):
     """RBM object used to pretrain a DBM layer"""
 
     def __init__(self,n_visible,n_hidden,layer,rng):
@@ -131,9 +131,15 @@ class preBM(object):
             raise ValueError
         self.layer = layer
         self.rng = rng
-        self.weights = rng.randn(self.n_visible,self.n_hidden)
-        self.biasv = rng.randn(self.n_visible)
-        self.biash = rng.randn(self.n_hidden)
+        self.weights = rng.uniform(low=-4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
+                                   high=4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
+                                   size=(self.n_visible,self.n_hidden))
+        self.biasv = rng.uniform(low=-4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
+                                   high=4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
+                                   size=self.n_visible)
+        self.biash = rng.uniform(low=-4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
+                                   high=4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
+                                   size=self.n_hidden)
         self.constrainWeights()
     
     def constrainWeights(self):
