@@ -166,7 +166,7 @@ class preRBM(object):
         else:
             states = data
         params = np.concatenate((self.weights.flatten(),self.biasv,self.biash))
-        params = minimize(flow,params,jac=gradFlow,args=(eps,states,self.n_visible,self.n_hidden)).x
+        params = minimize(flow,params,method='L-BFGS-B',jac=gradFlow,args=(eps,states,self.n_visible,self.n_hidden)).x
         num = self.n_visible*self.n_hidden
         self.weights = params[:num].reshape(self.n_visible,self.n_hidden)
         self.biasv = params[num:num+self.n_visible]
