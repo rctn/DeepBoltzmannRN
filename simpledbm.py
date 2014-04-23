@@ -291,7 +291,7 @@ class sdbm(object):
             self.weights -= alpha*eps*dw/nData
             self.bias -= alpha*eps*db/nData
 
-    def ExTrain(self,vis,steps,eps,alpha,meanSteps,intOnly=False):
+    def ExTrain(self,vis,steps,eps,meanSteps,intOnly=False):
         """Adjust weights/biases of the network to minimize probability flow, K via
         gradient descent.
 
@@ -322,6 +322,7 @@ class sdbm(object):
             fullStates = np.around(fullStates)
 
         for ii in xrange(steps):
+            flows = 0.
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
             for layer_i in xrange(self.n_layers):
@@ -346,7 +347,7 @@ class sdbm(object):
                         diffe += -vT_W_h+vT_W_hf
                     # import ipdb; ipdb.set_trace()
                     diffe = np.exp(.5*(diffe))
-
+                    flows += diffe.sum()
                     # Bias update
                     diffeb = -originalState+flippedState
                     db[layer_i,unit_i] += diffeb.dot(diffe)
@@ -361,9 +362,9 @@ class sdbm(object):
                         diffew = -np.einsum('ij,i->ij',fullStates[:,layer_i-1],originalState)+ \
                                     np.einsum('ij,i->ij',fullStates[:,layer_i-1],flippedState)
                         dw[layer_i-1,:,unit_i] += np.einsum('i,ij->j',diffe,diffew)
-            
-            self.weights -= alpha*eps*dw/float(nData)
-            self.bias -= alpha*eps*db/float(nData)
+            print(flows)
+            self.weights -= eps*dw/float(nData)
+            self.bias -= eps*db/float(nData)
 
     def ExHidden(self,vis,meanSteps):
         """Finds Expectation for hidden units using mean-field variational approach
