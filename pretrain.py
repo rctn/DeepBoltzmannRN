@@ -78,9 +78,9 @@ def energyDiff(weights,biasv,biash,data,n):
     """
     flip = data.copy()
     flip[:,n] = 1-flip[:,n]
-    logTerm = np.sum(np.log(1.+np.exp(biash+np.dot(data,weights))),axis=1)
+    logTerm = np.sum(np.log(1.+np.exp(biash+data.dot(weights))),axis=1)
     logTermBF = np.sum(np.log(1.+np.exp(biash+flip.dot(weights))),axis=1)
-    return (-data.dot(biasv)-logTerm)-(flip.dot(biasv)-logTermBF)
+    return (-data[:,n]*biasv[n]-logTerm)-(-flip[:,n]*biasv[n]-logTermBF)
 
 def dedwDiff(weights,biash,data,n):
     n_data = data.shape[0]
