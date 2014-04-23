@@ -326,42 +326,42 @@ class sdbm(object):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
             for layer_i in xrange(self.n_layers):
-                for unit_i in xrange(self.n_units):
-                    originalState = fullStates[:,layer_i,unit_i]
-                    flippedState = 1.-fullStates[:,layer_i,unit_i]
+                originalState = fullStates[:,layer_i,:]
+                flippedState = 1.-fullStates[:,layer_i,:]
 
-                    diffe = -originalState*self.bias[layer_i,unit_i]+flippedState*self.bias[layer_i,unit_i]
+                diffe = -originalState*self.bias[layer_i]+flippedState*self.bias[layer_i]
 
-                    # All layers except top
-                    if layer_i < (self.n_layers-1):
-                        W_h = self.weights[layer_i,unit_i].dot(fullStates[:,layer_i+1].T)
-                        vT_W_h = originalState*W_h
-                        vfT_W_h = flippedState*W_h
-                        diffe += -vT_W_h+vfT_W_h
+                # All layers except top
+                if layer_i < (self.n_layers-1):
+                    W_h = self.weights[layer_i].dot(fullStates[:,layer_i+1].T).T
+                    vT_W_h = originalState*W_h
+                    vfT_W_h = flippedState*W_h
+                    diffe += -vT_W_h+vfT_W_h
 
-                    # All layers except bottom (visible)
-                    if layer_i > 0:
-                        vT_W = fullStates[:,layer_i-1].dot(self.weights[layer_i-1,:,unit_i])
-                        vT_W_h = vT_W*originalState
-                        vT_W_hf = vT_W*flippedState
-                        diffe += -vT_W_h+vT_W_hf
-                    # import ipdb; ipdb.set_trace()
-                    diffe = np.exp(.5*(diffe))
-                    flows += diffe.sum()
-                    # Bias update
-                    diffeb = -originalState+flippedState
-                    db[layer_i,unit_i] += diffeb.dot(diffe)
+                # All layers except bottom (visible)
+                if layer_i > 0:
+                    vT_W = fullStates[:,layer_i-1].dot(self.weights[layer_i-1])
+                    vT_W_h = vT_W*originalState
+                    vT_W_hf = vT_W*flippedState
+                    diffe += -vT_W_h+vT_W_hf
+                    
+                diffe = np.exp(.5*(diffe))
+                flows += diffe.sum()
+                # Bias update
+                diffeb = -originalState+flippedState
+                db[layer_i] += (diffeb*diffe).sum(0)
 
-                    # Weights update
-                    if layer_i < (self.n_layers-1):
-                        diffew = -np.einsum('i,ij->ij',originalState,fullStates[:,layer_i+1])+ \
-                                    np.einsum('i,ij->ij',flippedState,fullStates[:,layer_i+1])
-                        dw[layer_i,unit_i] += np.einsum('i,ij->j',diffe,diffew)
+                # Weights update
+                if layer_i < (self.n_layers-1):
+                    dkdw = -np.einsum('ij,ik->jk',originalState*diffe,fullStates[:,layer_i+1])+ \
+                            np.einsum('ij,ik->jk',flippedState*diffe,fullStates[:,layer_i+1])
+                    dw[layer_i] += dkdw
 
-                    if layer_i > 0:
-                        diffew = -np.einsum('ij,i->ij',fullStates[:,layer_i-1],originalState)+ \
-                                    np.einsum('ij,i->ij',fullStates[:,layer_i-1],flippedState)
-                        dw[layer_i-1,:,unit_i] += np.einsum('i,ij->j',diffe,diffew)
+                if layer_i > 0:
+                    dkdw = -np.einsum('ij,ik->jk',fullStates[:,layer_i-1],originalState*diffe)+ \
+                            np.einsum('ij,ik->jk',fullStates[:,layer_i-1],flippedState*diffe)
+                    dw[layer_i-1] += dkdw
+
             print(flows)
             self.weights -= eps*dw/float(nData)
             self.bias -= eps*db/float(nData)
