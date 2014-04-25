@@ -373,8 +373,7 @@ class sdbm(object):
         """
         curState = np.zeros((vis.shape[0],self.n_layers,self.n_units))
         # Initialize state to visible and zeros
-        for ii in xrange(vis.shape[0]):
-            curState[ii,0] = vis[ii]
+        curState[:,0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
