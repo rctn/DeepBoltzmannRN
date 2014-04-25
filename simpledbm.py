@@ -313,56 +313,47 @@ class sdbm(object):
             Round mean-field values to binary
         """
         nData = vis.shape[0]
+
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
-
         #Find meanfield estimates
         fullStates = self.ExHidden(vis,meanSteps)
         if intOnly:
             fullStates = np.around(fullStates)
 
         for ii in xrange(steps):
-            flows = 0.
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
             for layer_i in xrange(self.n_layers):
                 originalState = fullStates[:,layer_i,:]
                 flippedState = 1.-fullStates[:,layer_i,:]
 
-                diffe = -originalState*self.bias[layer_i]+flippedState*self.bias[layer_i]
-
+                diffe = (-originalState+flippedState)*self.bias[layer_i]
                 # All layers except top
                 if layer_i < (self.n_layers-1):
                     W_h = self.weights[layer_i].dot(fullStates[:,layer_i+1].T).T
-                    vT_W_h = originalState*W_h
-                    vfT_W_h = flippedState*W_h
-                    diffe += -vT_W_h+vfT_W_h
-
+                    diffe += (-originalState+flippedState)*W_h
                 # All layers except bottom (visible)
                 if layer_i > 0:
                     vT_W = fullStates[:,layer_i-1].dot(self.weights[layer_i-1])
-                    vT_W_h = vT_W*originalState
-                    vT_W_hf = vT_W*flippedState
-                    diffe += -vT_W_h+vT_W_hf
+                    diffe += vT_W*(-originalState+flippedState)
                     
                 diffe = np.exp(.5*(diffe))
-                flows += diffe.sum()
+
                 # Bias update
                 diffeb = -originalState+flippedState
                 db[layer_i] += (diffeb*diffe).sum(0)
-
                 # Weights update
                 if layer_i < (self.n_layers-1):
-                    dkdw = -np.einsum('ij,ik->jk',originalState*diffe,fullStates[:,layer_i+1])+ \
-                            np.einsum('ij,ik->jk',flippedState*diffe,fullStates[:,layer_i+1])
+                    dkdw = np.einsum('ij,ik->jk',(-originalState+flippedState)*diffe,
+                            fullStates[:,layer_i+1])
                     dw[layer_i] += dkdw
 
                 if layer_i > 0:
-                    dkdw = -np.einsum('ij,ik->jk',fullStates[:,layer_i-1],originalState*diffe)+ \
-                            np.einsum('ij,ik->jk',fullStates[:,layer_i-1],flippedState*diffe)
+                    dkdw = np.einsum('ij,ik->jk',fullStates[:,layer_i-1],
+                            (-originalState+flippedState)*diffe)
                     dw[layer_i-1] += dkdw
 
-            print(flows)
             self.weights -= eps*dw/float(nData)
             self.bias -= eps*db/float(nData)
 
@@ -474,6 +465,49 @@ class sdbm(object):
         """Calculate current energy of DBM
         """
         return energy(self.weights,self.bias,self.state)
+
+
+    def flowSamples(self, vis, meanSteps, intOnly=False):
+        """Calculate the probability flow K for a given dataset up to
+        a factor epsilon.
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Dataset to compute flow on
+
+        meanSteps : int
+            Number of mean-field cycles per layer
+
+        intOnly : boolean, optional
+            Round mean-field values to binary
+        """
+        nData = vis.shape[0]
+
+        #Find meanfield estimates
+        fullStates = self.ExHidden(vis,meanSteps)
+        if intOnly:
+            fullStates = np.around(fullStates)
+
+        flows = 0.
+        for layer_i in xrange(self.n_layers):
+            originalState = fullStates[:,layer_i,:]
+            flippedState = 1.-fullStates[:,layer_i,:]
+
+            diffe = (-originalState+flippedState)*self.bias[layer_i]
+            # All layers except top
+            if layer_i < (self.n_layers-1):
+                W_h = self.weights[layer_i].dot(fullStates[:,layer_i+1].T).T
+                diffe += (-originalState+flippedState)*W_h
+            # All layers except bottom (visible)
+            if layer_i > 0:
+                vT_W = fullStates[:,layer_i-1].dot(self.weights[layer_i-1])
+                diffe += vT_W*(-originalState+flippedState)
+                
+            diffe = np.exp(.5*(diffe))
+            flows += diffe.sum()
+
+        return flows/nData
 
     def scoreSamples(self, vis, n_samples, steps):
         """Evaluate the fitness of the model for a given dataset. Calculate
