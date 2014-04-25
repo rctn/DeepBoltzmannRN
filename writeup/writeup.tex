@@ -1,0 +1,29 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath}
+
+\title{Training Deep Boltzmann Machines without Samping}
+\author{Brian Cheung\\
+Jesse Livezey}
+
+\begin{document}
+\maketitle
+
+\section{Pretraining with a Stack of RBMs}
+As done in \cite{Salakhutdinov2009}, we pretrain our DBM using a stack of modified RBMs.
+The probability function for a RBM state is
+\begin{equation}
+  \label{eq:Prbm}
+  P(v,h)=\frac{e^{-E(v,h)}}{Z}=\frac{e^{b_i^vv_i+b_i^hh_i+v_iW_{ij}h_j}}{Z}.
+\end{equation}
+To learn the weights and biases, we can integrate out the hidden units and use MPF~\cite{Sohl-Dickstein2011} to update the weights.
+The hidden units are integrated out as follows
+\begin{equation}
+  \label{eq:intouth}
+  \begin{split}
+    P(v)&=\sum_k\sum_{h_k=0}^1P(v,h)=\sum_k\sum_{h_k=0}^1\frac{e^{b_i^vv_i+b_i^hh_i+v_iW_{ij}h_j}}{Z}\\
+        &=e^{b_i^vv_i}\sum_{h_k=0}^1\prod_ke^{(b_i^h+v_iW_{ij})h_k}
+  \end{split}
+\end{equation}
+
+\end{document}

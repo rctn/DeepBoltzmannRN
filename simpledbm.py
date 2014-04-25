@@ -247,7 +247,7 @@ class sdbm(object):
         return energy(self.weights,self.bias,state)-energy(self.weights,self.bias,stateFlip)
 
     def mpfTrain(self,vis,steps,eps,alpha,stepsSample):
-        """Adjust weights/biases of the network to minimize probability flow, K via
+        """Adjust weights/biases of the network to minimize probability flow: K, via
         gradient descent.
 
         Parameters

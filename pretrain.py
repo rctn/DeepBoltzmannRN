@@ -56,9 +56,10 @@ def gradFlow(params,*args):
     dkdbh = np.zeros_like(biash)
     for ii in xrange(n_visible):
 	diffe = np.exp(.5*energyDiff(weights,biasv,biash,data,ii))
-	dkdw += np.dot(np.transpose(dedwDiff(weights,biash,data,ii),axes=(1,2,0)),diffe)
-	dkdbv += np.dot(dedbvDiff(data,ii).T,diffe)
-	dkdbh += np.dot(dedbhDiff(weights,biash,data,ii).T,diffe)
+        dkdw += np.einsum('ijk,i->jk',dedwDiff(weights,biash,data,ii),diffe)
+        #dkdbv += np.einsum('ij,i->j',dedbvDiff(data,ii),diffe)
+        dkdbv[ii] += np.dot(1.+2*data[:,ii],diffe)
+        dkdbh += np.einsum('ij,i->j',dedbhDiff(weights,biash,data,ii),diffe)
     return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
 
 
@@ -86,8 +87,10 @@ def dedwDiff(weights,biash,data,n):
     n_data = data.shape[0]
     flip = data.copy()
     flip[:,n] = 1-flip[:,n]
-    dedw = -np.array([np.outer(data[ii],sigm(biash+data[ii].dot(weights))) for ii in xrange(n_data)])
-    dedwBF = -np.array([np.outer(flip[ii],sigm(biash+flip[ii].dot(weights))) for ii in xrange(n_data)])
+    terms = biash+data.dot(weights)
+    termsBF = terms+(1.-2*np.outer(data[:,n],weights[n,:]))
+    dedw = -np.einsum('ij,ik->ijk',data,terms)
+    dedwBF = -np.einsum('ij,ik->ijk',flip,termsBF)
     return dedw-dedwBF
 
 def dedbvDiff(data,n):
@@ -97,10 +100,10 @@ def dedbvDiff(data,n):
 
 def dedbhDiff(weights,biash,data,n):
     n_data = data.shape[0]
-    flip = data.copy()
-    flip[:,n] = 1-flip[:,n]
-    dedbh = -sigm(np.tile(biash,(n_data,1))+data.dot(weights))
-    dedbhBF = -sigm(np.tile(biash,(n_data,1))+flip.dot(weights))
+    terms = biash+data.dot(weights)
+    termsBF = terms+(1.-2*np.outer(data[:,n],weights[n,:]))
+    dedbh = -sigm(terms)
+    dedbhBF = -sigm(termsBF)
     return dedbh-dedbhBF
 
 def sigm(x):
@@ -172,6 +175,39 @@ class preRBM(object):
         self.biasv = params[num:num+self.n_visible]
         num += self.n_visible
         self.biash = params[num:]
+        self.constrainWeights()
+        if self.layer == 'bottom':
+            weights = self.weights[:int(self.n_visible/2)]
+            biasv = self.biasv[:int(self.n_visible/2)]
+            biash = self.biash
+        elif self.layer == 'middle':
+            weights = self.weights/2.
+            biasv = self.biasv
+            biash = self.biash
+        elif self.layer == 'top':
+            weights = self.weights[:,:int(self.n_hidden/2)]
+            biasv = self.biasv
+            biash = self.biash[:int(self.n_hidden/2)]
+        else:
+            raise ValueError
+        return (weights,biasv,biash)
+
+    def trainStep(self,eps,data,steps):
+        dkdw = np.zeros_like(self.weights)
+        dkdbv = np.zeros_like(self.biasv)
+        dkdbh = np.zeros_like(self.biash)
+        n_data = data.shape[0]
+        for jj in xrange(steps):
+            for ii in xrange(self.n_visible):
+	        diffe = np.exp(.5*energyDiff(self.weights,self.biasv,self.biash,data,ii))
+                dkdw += np.einsum('ijk,i->jk',dedwDiff(self.weights,self.biash,data,ii),diffe)
+                #dkdbv += np.einsum('ij,i->j',dedbvDiff(data,ii),diffe)
+                dkdbv[ii] += np.dot(1.+2*data[:,ii],diffe)
+                dkdbh += np.einsum('ij,i->j',dedbhDiff(self.weights,self.biash,data,ii),diffe)
+            self.weights -= eps*dkdw/float(n_data)
+            self.biasv -= eps*dkdbv/float(n_data)
+            self.biash -= eps*dkdbh/float(n_data)
+
         self.constrainWeights()
         if self.layer == 'bottom':
             weights = self.weights[:int(self.n_visible/2)]
