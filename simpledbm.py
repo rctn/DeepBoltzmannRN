@@ -317,41 +317,60 @@ class sdbm(object):
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
         #Find meanfield estimates
-        fullStates = self.ExHidden(vis,meanSteps)
-        if intOnly:
-            fullStates = np.around(fullStates)
+        muStates = self.ExHidden(vis,meanSteps)
+
+        ####
+        # meanHStates = fullStates.mean(0) # [1:]
+        # tmask = (meanHStates > .9) + (meanHStates < .1)
+
+        # tmask = tmask.ravel()
+        # reset = ((self.rng.uniform(size=(fullStates.shape[0], tmask.shape[0])) < 0.1) & tmask.reshape((1,-1))).ravel()
+        # fullStatesShape = fullStates.shape
+        # fullStates = fullStates.reshape((-1,))
+
+        # fullStates[reset] = 0.5
+        # fullStates = fullStates.reshape((fullStatesShape))
+        ###
+
+
+        # import ipdb; ipdb.set_trace()
+        # # 
+        # fullStates[:,tmask] = self.rng.uniform(size=tmask.sum())
+
+        fullStates = np.around(muStates)
 
         for ii in xrange(steps):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
             for layer_i in xrange(self.n_layers):
-                originalState = fullStates[:,layer_i,:]
-                flippedState = 1.-fullStates[:,layer_i,:]
+                originalState = np.ones_like(fullStates[:,layer_i,:])
+                flippedState = np.zeros_like(1.-fullStates[:,layer_i,:])
 
                 diffe = (-originalState+flippedState)*self.bias[layer_i]
                 # All layers except top
                 if layer_i < (self.n_layers-1):
-                    W_h = self.weights[layer_i].dot(fullStates[:,layer_i+1].T).T
+                    W_h = self.weights[layer_i].dot(muStates[:,layer_i+1].T).T
                     diffe += (-originalState+flippedState)*W_h
                 # All layers except bottom (visible)
                 if layer_i > 0:
-                    vT_W = fullStates[:,layer_i-1].dot(self.weights[layer_i-1])
+                    vT_W = muStates[:,layer_i-1].dot(self.weights[layer_i-1])
                     diffe += vT_W*(-originalState+flippedState)
                     
-                diffe = np.exp(.5*(diffe))
+                mu_diffe = muStates[:,layer_i]*np.exp(.5*diffe) 
+                muf_diffe = (1.-muStates[:,layer_i])*np.exp(.5*-diffe)
 
                 # Bias update
-                diffeb = -originalState+flippedState
-                db[layer_i] += (diffeb*diffe).sum(0)
+                diffeb = (-originalState+flippedState)*mu_diffe + (originalState-flippedState)*muf_diffe
+                db[layer_i] += diffeb.sum(0)
                 # Weights update
                 if layer_i < (self.n_layers-1):
-                    dkdw = np.einsum('ij,ik->jk',(-originalState+flippedState)*diffe,
-                            fullStates[:,layer_i+1])
+                    dkdw = np.einsum('ij,ik->jk',diffeb,
+                            muStates[:,layer_i+1])
                     dw[layer_i] += dkdw
 
                 if layer_i > 0:
-                    dkdw = np.einsum('ij,ik->jk',fullStates[:,layer_i-1],
-                            (-originalState+flippedState)*diffe)
+                    dkdw = np.einsum('ij,ik->jk',muStates[:,layer_i-1],
+                            diffeb)
                     dw[layer_i-1] += dkdw
 
             self.weights -= eps*dw/float(nData)
@@ -468,7 +487,8 @@ class sdbm(object):
 
     def flowSamples(self, vis, meanSteps, intOnly=False):
         """Calculate the probability flow K for a given dataset up to
-        a factor epsilon.
+        a factor epsilon (KL divergence between data distribution
+        and distribution after an infinitesimal time).
 
         Parameters
         ----------
