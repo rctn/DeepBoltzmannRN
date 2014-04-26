@@ -247,7 +247,7 @@ class sdbm(object):
         return energy(self.weights,self.bias,state)-energy(self.weights,self.bias,stateFlip)
 
     def mpfTrain(self,vis,steps,eps,alpha,stepsSample):
-        """Adjust weights/biases of the network to minimize probability flow, K via
+        """Adjust weights/biases of the network to minimize probability flow: K, via
         gradient descent.
 
         Parameters
@@ -397,7 +397,7 @@ class sdbm(object):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(curState[:,jj+1],self.weights[jj])
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],curState[:,jj+1])
                 curState[:,jj] = sigm(terms)
             # Find activation for top layer
             # Apply mean field equations
@@ -406,7 +406,7 @@ class sdbm(object):
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(curState[:,jj+1],self.weights[jj])
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],curState[:,jj+1])
                 curState[:,jj] = sigm(terms)
 
         return curState
