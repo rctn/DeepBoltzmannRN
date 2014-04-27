@@ -12,7 +12,7 @@ def sigm(x):
     x : array-like
         Array of elements to calculate sigmoid for.
     """
-    return 1./(1+np.exp(-x))
+    return 1./(1.+np.exp(-x))
 
 #########################################################
 #DBM functions
@@ -193,6 +193,7 @@ class sdbm(object):
            
         self.n_layers = n_layers
         self.n_units = n_units
+        self.temperature = 1.
 
     def pretrain(self,vis,eps):
         """Trains each layer with a modified RBM
@@ -291,7 +292,7 @@ class sdbm(object):
             self.weights -= alpha*eps*dw/nData
             self.bias -= alpha*eps*db/nData
 
-    def ExTrain(self,vis,steps,eps,meanSteps,intOnly=False):
+    def ExTrain(self,vis,steps,eps,meanSteps):
         """Adjust weights/biases of the network to minimize probability flow, K via
         gradient descent.
 
@@ -308,9 +309,6 @@ class sdbm(object):
 
         meanSteps : int
             Number of mean-field cycles per layer
-
-        intOnly : boolean, optional
-            Round mean-field values to binary
         """
         nData = vis.shape[0]
 
@@ -320,57 +318,44 @@ class sdbm(object):
         muStates = self.ExHidden(vis,meanSteps)
 
         ####
-        # meanHStates = fullStates.mean(0) # [1:]
+        # meanHStates = muStates.mean(0) # [1:]
         # tmask = (meanHStates > .9) + (meanHStates < .1)
 
         # tmask = tmask.ravel()
-        # reset = ((self.rng.uniform(size=(fullStates.shape[0], tmask.shape[0])) < 0.1) & tmask.reshape((1,-1))).ravel()
-        # fullStatesShape = fullStates.shape
-        # fullStates = fullStates.reshape((-1,))
+        # reset = ((self.rng.uniform(size=(muStates.shape[0], tmask.shape[0])) < 0.1) & tmask.reshape((1,-1))).ravel()
+        # fullStatesShape = muStates.shape
+        # muStates = muStates.reshape((-1,))
 
-        # fullStates[reset] = 0.5
-        # fullStates = fullStates.reshape((fullStatesShape))
+        # muStates[reset] = 0.5
+        # muStates = muStates.reshape((fullStatesShape))
         ###
-
-
-        # import ipdb; ipdb.set_trace()
-        # # 
-        # fullStates[:,tmask] = self.rng.uniform(size=tmask.sum())
-
-        fullStates = np.around(muStates)
 
         for ii in xrange(steps):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
             for layer_i in xrange(self.n_layers):
-                originalState = np.ones_like(fullStates[:,layer_i,:])
-                flippedState = np.zeros_like(1.-fullStates[:,layer_i,:])
-
-                diffe = (-originalState+flippedState)*self.bias[layer_i]
+                diffe = np.tile(-self.bias[layer_i], (nData,1))
                 # All layers except top
                 if layer_i < (self.n_layers-1):
                     W_h = self.weights[layer_i].dot(muStates[:,layer_i+1].T).T
-                    diffe += (-originalState+flippedState)*W_h
+                    diffe += -W_h
                 # All layers except bottom (visible)
                 if layer_i > 0:
                     vT_W = muStates[:,layer_i-1].dot(self.weights[layer_i-1])
-                    diffe += vT_W*(-originalState+flippedState)
-                    
+                    diffe += -vT_W
+                
                 mu_diffe = muStates[:,layer_i]*np.exp(.5*diffe) 
                 muf_diffe = (1.-muStates[:,layer_i])*np.exp(.5*-diffe)
-
                 # Bias update
-                diffeb = (-originalState+flippedState)*mu_diffe + (originalState-flippedState)*muf_diffe
+                diffeb = -mu_diffe + muf_diffe
                 db[layer_i] += diffeb.sum(0)
                 # Weights update
                 if layer_i < (self.n_layers-1):
-                    dkdw = np.einsum('ij,ik->jk',diffeb,
-                            muStates[:,layer_i+1])
+                    dkdw = np.einsum('ij,ik->jk',diffeb,muStates[:,layer_i+1])
                     dw[layer_i] += dkdw
 
                 if layer_i > 0:
-                    dkdw = np.einsum('ij,ik->jk',muStates[:,layer_i-1],
-                            diffeb)
+                    dkdw = np.einsum('ij,ik->jk',muStates[:,layer_i-1],diffeb)
                     dw[layer_i-1] += dkdw
 
             self.weights -= eps*dw/float(nData)
@@ -397,16 +382,16 @@ class sdbm(object):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],curState[:,jj+1])
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],curState[:,jj+1].T).T
                 curState[:,jj] = sigm(terms)
             # Find activation for top layer
             # Apply mean field equations
             terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
-            curState[:,self.n_layers-1] = sigm(terms)
+            curState[:,self.n_layers-1] = sigm(self.temperature*terms)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],curState[:,jj+1])
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],curState[:,jj+1].T).T
                 curState[:,jj] = sigm(terms)
 
         return curState
@@ -430,20 +415,19 @@ class sdbm(object):
             # Sample bottom layers going up
             for jj in xrange(1,self.n_layers-1):
                 terms = self.bias[jj] + self.weights[jj-1].dot(stateUp[jj-1]) + self.weights[jj].T.dot(stateUp[jj+1])
-                probs = 1/(1+np.exp(-terms))
+                probs = sigm(terms)
                 stateUp[jj] = rands[0,jj-1] <= probs
 
-            # Double sampling for the top layer, before going back down
-            for jj in xrange(2):
-                top = self.n_layers-1
-                terms = self.bias[top] + self.weights[top-1].dot(stateUp[top-1])
-                probs = 1/(1+np.exp(-terms))
-                stateUp[top] = rands[jj,top-1] <= probs
+            # Sampling for the top layer, before going back down
+            top = self.n_layers-1
+            terms = self.bias[top] + self.weights[top-1].dot(stateUp[top-1])
+            probs = sigm(terms)
+            stateUp[top] = rands[1,top-1] <= probs
 
             # Sample bottom hidden layers going down
             for jj in xrange(self.n_layers-2,0,-1):
                 terms = self.bias[jj] + self.weights[jj-1].dot(stateUp[jj-1]) + self.weights[jj].T.dot(stateUp[jj+1])
-                probs = 1/(1+np.exp(-terms))
+                probs = sigm(terms)
                 stateUp[jj] = rands[1,jj-1] <= probs
 
         return stateUp
@@ -456,27 +440,29 @@ class sdbm(object):
         state : array-like, shape (n_layers, n_units)
             State of all the units
         """
-        vis = np.empty_like(self.state[0])
         rands = self.rng.rand(self.n_units)
         terms = self.bias[0] + self.weights[0].T.dot(state[1])
-        probs = 1/(1+np.exp(-terms))
+        probs = sigm(terms)
         vis = rands <= probs
 
         return vis
 
-    def sampleFull(self,steps):
+    def sampleFull(self,vis,steps):
         """Sample from P(h,v) of the DBM using Gibbs sampling.
 
         Parameters
         ----------
+        vis : array-like, shape (n_data, n_units)
+            Visible data to initially condition on during Gibbs
+            sampling
+
         steps : int
             Number of steps to gibbs sample
         """
-        state = self.state.copy()
         for i in xrange(steps):
+            state = self.sampleHidden(vis,3)
             vis = self.sampleVisible(state)
-            state = self.sampleHidden(vis,1)
-
+        state[0] = vis
         return state
     
     def curEnergy(self):
