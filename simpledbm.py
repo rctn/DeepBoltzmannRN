@@ -187,10 +187,10 @@ class sdbm(object):
         else:
             self.bias = bias
         if state is None:
-           self.state = rng.randint(2,size=(n_layers,n_units))
+            self.state = rng.randint(2,size=(n_layers,n_units))
         else:
             self.state = state
-        self.meanState = state.copy()
+        self.meanState = self.state.copy()
            
         self.n_layers = n_layers
         self.n_units = n_units
