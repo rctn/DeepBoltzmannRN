@@ -190,6 +190,7 @@ class sdbm(object):
            self.state = rng.randint(2,size=(n_layers,n_units))
         else:
             self.state = state
+        self.meanState = state.copy()
            
         self.n_layers = n_layers
         self.n_units = n_units
@@ -375,26 +376,25 @@ class sdbm(object):
         updateSteps : int
             Number of times to run through layers.
         """
-        curState = np.zeros((vis.shape[0],self.n_layers,self.n_units))
-        # Initialize state to visible and zeros
-        curState[:,0] = vis
+        # Initialize state to visible
+        self.meanState[:,0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],curState[:,jj+1].T).T
-                curState[:,jj] = sigm(terms)
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(self.meanState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],self.meanState[:,jj+1].T).T
+                self.meanState[:,jj] = sigm(terms)
             # Find activation for top layer
             # Apply mean field equations
-            terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
-            curState[:,self.n_layers-1] = sigm(self.temperature*terms)
+            terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(self.meanState[:,self.n_layers-2],self.weights[self.n_layers-2])
+            self.meanState[:,self.n_layers-1] = sigm(self.temperature*terms)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(curState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],curState[:,jj+1].T).T
-                curState[:,jj] = sigm(terms)
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(self.meanState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],self.meanState[:,jj+1].T).T
+                self.meanState[:,jj] = sigm(terms)
 
-        return curState
+        return self.meanState
             
     def sampleHidden(self,vis,steps):
         """Sample from P(h|v) for the DBM via gibbs sampling for each
