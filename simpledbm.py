@@ -382,8 +382,8 @@ class sdbm(object):
             Number of times to run through layers.
         """
         # Initialize state to visible
-        if self.meanState is None or self.meanState.shape[0] != vis.shape[0]:
-            self.meanState = np.zeros(shape=(vis.shape[0],self.n_layers,self.n_units)+.5
+        if (self.meanState is None) or (self.meanState.shape[0] != vis.shape[0]):
+            self.meanState = np.zeros(shape=(vis.shape[0],self.n_layers,self.n_units))+.5
         self.meanState[:,0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
