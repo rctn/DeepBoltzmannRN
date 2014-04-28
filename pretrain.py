@@ -89,8 +89,8 @@ def dedwDiff(weights,biash,data,n):
     flip[:,n] = 1-flip[:,n]
     terms = biash+data.dot(weights)
     termsBF = terms+(1.-2*np.outer(data[:,n],weights[n,:]))
-    dedw = -np.einsum('ij,ik->ijk',data,terms)
-    dedwBF = -np.einsum('ij,ik->ijk',flip,termsBF)
+    dedw = -np.einsum('ij,ik->ijk',data,sigm(terms))
+    dedwBF = -np.einsum('ij,ik->ijk',flip,sigm(termsBF))
     return dedw-dedwBF
 
 def dedbvDiff(data,n):
@@ -114,7 +114,7 @@ def sigm(x):
     x : array-like
         Array of elements to calculate sigmoid for.
     """
-    return 1./(1+np.exp(-x))
+    return 1./(1.+np.exp(-x))
 
 class preRBM(object):
     """RBM object used to pretrain a DBM layer"""

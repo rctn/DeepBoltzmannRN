@@ -2,7 +2,7 @@
 
 \usepackage{amsmath}
 
-\title{Training Deep Boltzmann Machines without Samping}
+\title{Sampling Free Boltzmann Machines}
 \author{Brian Cheung\\
 Jesse Livezey}
 
@@ -17,13 +17,47 @@ The probability function for a RBM state is
   P(v,h)=\frac{e^{-E(v,h)}}{Z}=\frac{e^{b_i^vv_i+b_i^hh_i+v_iW_{ij}h_j}}{Z}.
 \end{equation}
 To learn the weights and biases, we can integrate out the hidden units and use MPF~\cite{Sohl-Dickstein2011} to update the weights.
-The hidden units are integrated out as follows
+The hidden units are integrated out as follows:
 \begin{equation}
   \label{eq:intouth}
   \begin{split}
-    P(v)&=\sum_k\sum_{h_k=0}^1P(v,h)=\sum_k\sum_{h_k=0}^1\frac{e^{b_i^vv_i+b_i^hh_i+v_iW_{ij}h_j}}{Z}\\
-        &=e^{b_i^vv_i}\sum_{h_k=0}^1\prod_ke^{(b_i^h+v_iW_{ij})h_k}
+    P(v)&=\sum_{h_k=0~\forall k}^1P(v,h)\\
+        &=\sum_{h_j=0}^1\frac{e^{b_i^vv_i+b_j^hh_j+v_iW_{ij}h_j}}{Z}\\
+        &=e^{b_i^vv_i}\prod_j\sum_{h_j=0}^1e^{(b_j^h+v_iW_{ij})h_j}/Z\\
+        &=e^{b_i^vv_i}\prod_j\left(1+e^{(b_j^h+v_iW_{ij})}\right)/Z\\
+        &=e^{b_i^vv_i+\sum_j\log\left(1+e^{(b_j^h+v_iW_{ij})}\right)}/Z
   \end{split}
 \end{equation}
+
+We can now interpret the terms in the exponent as a new energy for an RBM with hidden weights integrated out.
+\begin{equation}
+  \label{eq:rbmE}
+    E(v) = -b_i^vv_i-\sum_j\log\left(1+e^{(b_j^h+v_iW_{ij})}\right)
+\end{equation}
+
+The MPF objective function for this system is:
+\begin{equation}
+  \label{eq:RBMObj}
+    K(\theta) = \frac{\epsilon}{|\mathcal{D}|}\sum_{j\in\mathcal{D}}\sum_{i\in\mathcal{D}_{BF}}\exp{[\tfrac{1}{2}(E_j(\theta)-E_i(\theta))]}
+\end{equation}
+and the generalized gradient is:
+\begin{equation}
+  \label{eq:RBMGrad}
+    \frac{\partial K}{\partial \theta}(\theta) 
+      = \frac{\epsilon}{|\mathcal{D}|}\sum_{j\in\mathcal{D}}\sum_{i\in\mathcal{D}_{BF}}
+      \left[\frac{\partial E_j(\theta)}{\partial \theta}-\frac{\partial E_i(\theta)}{\partial \theta} \right]
+      \exp{[\tfrac{1}{2}(E_j(\theta)-E_i(\theta))]}.
+\end{equation}
+We need to calculate the partial derivative of the energy with respect to the weights and biases.
+\begin{align}
+  \label{eq:dedw}
+    \frac{\partial E(v)}{\partial W_{nm}} &= -\frac{e^{b_m^h+v_iW_{im}}v_n}{1+e^{b_m^h+v_iW_{im}}}
+      =-v_n\text{sigm}(b_m^h+v_iW_{im})\\
+  \label{eq:dedbv}
+    \frac{\partial E(v)}{\partial b_n^v} &= -v_n\\
+  \label{eq:dedbh}
+    \frac{\partial E(v)}{\partial b_n^h} &= -\frac{e^{b_n^h+v_iW_{in}}}{1+e^{b_n^h+v_iW_{in}}}
+      =-\text{sigm}(b_n^h+v_iW_{in})
+\end{align}
 
 \end{document}
