@@ -190,7 +190,7 @@ class sdbm(object):
            self.state = rng.randint(2,size=(n_layers,n_units))
         else:
             self.state = state
-        self.meanState = state.copy()
+        self.meanState = None
            
         self.n_layers = n_layers
         self.n_units = n_units
@@ -382,6 +382,8 @@ class sdbm(object):
             Number of times to run through layers.
         """
         # Initialize state to visible
+        if self.meanState is None or self.meanState.shape[0] != vis.shape[0]:
+            self.meanState = np.zeros(shape=(vis.shape[0],self.n_layers,self.n_units)+.5
         self.meanState[:,0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
