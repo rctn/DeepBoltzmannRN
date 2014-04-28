@@ -193,7 +193,6 @@ class sdbm(object):
            
         self.n_layers = n_layers
         self.n_units = n_units
-        self.temperature = 1.
 
     def pretrain(self,vis,eps):
         """Trains each layer with a modified RBM
@@ -311,23 +310,29 @@ class sdbm(object):
             Number of mean-field cycles per layer
         """
         nData = vis.shape[0]
-
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
         #Find meanfield estimates
         muStates = self.ExHidden(vis,meanSteps)
 
         ####
-        # meanHStates = muStates.mean(0) # [1:]
+        # meanHStates = muStates.mean(0)[1:]
         # tmask = (meanHStates > .9) + (meanHStates < .1)
+        # tmask = np.tile(tmask,(nData,1))
+        # tmask = (self.rng.uniform(size=tmask.shape) < .1) & tmask
+
+        # hstemp = muStates[:,1:,:]
+        # hstemp[tmask[:,np.newaxis,:]] = 0.5
+        # muStates[:,:1,:] = hstemp
 
         # tmask = tmask.ravel()
         # reset = ((self.rng.uniform(size=(muStates.shape[0], tmask.shape[0])) < 0.1) & tmask.reshape((1,-1))).ravel()
         # fullStatesShape = muStates.shape
         # muStates = muStates.reshape((-1,))
 
-        # muStates[reset] = 0.5
+        # muStates[reset] = 0.7
         # muStates = muStates.reshape((fullStatesShape))
+
         ###
 
         for ii in xrange(steps):
@@ -387,7 +392,7 @@ class sdbm(object):
             # Find activation for top layer
             # Apply mean field equations
             terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(curState[:,self.n_layers-2],self.weights[self.n_layers-2])
-            curState[:,self.n_layers-1] = sigm(self.temperature*terms)
+            curState[:,self.n_layers-1] = sigm(terms)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
                 # Apply mean field equations
