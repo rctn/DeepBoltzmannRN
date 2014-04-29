@@ -146,28 +146,30 @@ class sdbm(object):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
             for layer_i in xrange(self.n_layers):
-                diffe = np.tile(-self.bias[layer_i], (nData,1))
+                diffeL = np.tile(-self.bias[layer_i], (nData,1))
+                diffeU = np.tile(-self.bias[layer_i], (nData,1))
                 # All layers except top
                 if layer_i < (self.n_layers-1):
                     W_h = self.weights[layer_i].dot(muStates[:,layer_i+1].T).T
-                    diffe += -W_h
+                    diffeL += -W_h
                 # All layers except bottom (visible)
                 if layer_i > 0:
                     vT_W = muStates[:,layer_i-1].dot(self.weights[layer_i-1])
-                    diffe += -vT_W
+                    diffeU += -vT_W
                 
-                mu_diffe = muStates[:,layer_i]*np.exp(.5*diffe) 
-                muf_diffe = (1.-muStates[:,layer_i])*np.exp(.5*-diffe)
                 # Bias update
-                diffeb = -mu_diffe + muf_diffe
-                db[layer_i] += diffeb.sum(0)
-                # Weights update
-                if layer_i < (self.n_layers-1):
-                    dkdw = np.einsum('ij,ik->jk',diffeb,muStates[:,layer_i+1])
-                    dw[layer_i] += dkdw
+                diffebL = -muStates[:,layer_i]*np.exp(.5*diffeL) + (1.-muStates[:,layer_i])*np.exp(-.5*diffeL)
+                db[layer_i] += diffebL.sum(0)
 
+                # Weights update
+                # All layers except top
+                if layer_i < (self.n_layers-1):
+                    dkdw = np.einsum('ij,ik->jk',diffebL,muStates[:,layer_i+1])
+                    dw[layer_i] += dkdw
+                # All layers except bottom (visible)
                 if layer_i > 0:
-                    dkdw = np.einsum('ij,ik->jk',muStates[:,layer_i-1],diffeb)
+                    diffebU = -muStates[:,layer_i]*np.exp(.5*diffeU) + (1.-muStates[:,layer_i])*np.exp(-.5*diffeU)
+                    dkdw = np.einsum('ij,ik->jk',muStates[:,layer_i-1],diffebU)
                     dw[layer_i-1] += dkdw
 
             self.weights -= eps*dw/float(nData)
@@ -195,16 +197,16 @@ class sdbm(object):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(self.meanState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],self.meanState[:,jj+1].T).T
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+self.meanState[:,jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[:,jj+1].T).T
                 self.meanState[:,jj] = sigm(terms)
             # Find activation for top layer
             # Apply mean field equations
-            terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+np.dot(self.meanState[:,self.n_layers-2],self.weights[self.n_layers-2])
+            terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+self.meanState[:,self.n_layers-2].dot(self.weights[self.n_layers-2])
             self.meanState[:,self.n_layers-1] = sigm(terms)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+np.dot(self.meanState[:,jj-1],self.weights[jj-1])+np.dot(self.weights[jj],self.meanState[:,jj+1].T).T
+                terms = np.tile(self.bias[jj],(vis.shape[0],1))+self.meanState[:,jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[:,jj+1].T).T
                 self.meanState[:,jj] = sigm(terms)
 
         return self.meanState
@@ -227,19 +229,19 @@ class sdbm(object):
             rands = self.rng.rand(2,self.n_layers-1,self.n_units)
             # Sample bottom layers going up
             for jj in xrange(1,self.n_layers-1):
-                terms = self.bias[jj] + self.weights[jj-1].dot(stateUp[jj-1]) + self.weights[jj].T.dot(stateUp[jj+1])
+                terms = self.bias[jj] + stateUp[jj-1].dot(self.weights[jj-1]) + self.weights[jj].dot(stateUp[jj+1])
                 probs = sigm(terms)
                 stateUp[jj] = rands[0,jj-1] <= probs
 
             # Sampling for the top layer, before going back down
             top = self.n_layers-1
-            terms = self.bias[top] + self.weights[top-1].dot(stateUp[top-1])
+            terms = self.bias[top] + stateUp[top-1].dot(self.weights[top-1])
             probs = sigm(terms)
             stateUp[top] = rands[1,top-1] <= probs
 
             # Sample bottom hidden layers going down
             for jj in xrange(self.n_layers-2,0,-1):
-                terms = self.bias[jj] + self.weights[jj-1].dot(stateUp[jj-1]) + self.weights[jj].T.dot(stateUp[jj+1])
+                terms = self.bias[jj] + stateUp[jj-1].dot(self.weights[jj-1]) + self.weights[jj].dot(stateUp[jj+1])
                 probs = sigm(terms)
                 stateUp[jj] = rands[1,jj-1] <= probs
 
