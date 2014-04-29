@@ -2,6 +2,7 @@ from __future__ import division
 from __future__ import print_function
 import numpy as np
 from scipy.optimize import minimize
+from numba import autojit
 
 def flow(params,*args):
     """MPF objective function for RBM. Used to pretrain DBM layers.
@@ -25,9 +26,17 @@ def flow(params,*args):
     biasv = params[num:num+n_visible]
     num += n_visible
     biash = params[num:num+n_hidden]
-    sflow = np.sum([np.exp(.5*(energyDiff(weights,biasv,biash,data,ii))) for ii in xrange(n_visible)])
+    sflow = iterEnergy(weights,biasv,biash,data,n_visible)
+    #np.sum([np.exp(.5*(energyDiff(weights,biasv,biash,data,ii))) for ii in xrange(n_visible)])
     k = eps*sflow/n_data
     return k
+
+  @autojit
+  def iterEnergy(weights,biasv,biash,data,n_visible):
+    result = 0.
+    for ii in xrange(n_visible):
+        result+= np.exp(.5*(energyDiff(weights,biasv,biash,data,ii)))
+    return result
 
 def gradFlow(params,*args):
     """Gradient of MPF objective function for RBM. Used to pretrain DBM layers.
@@ -54,13 +63,20 @@ def gradFlow(params,*args):
     dkdw = np.zeros_like(weights)
     dkdbv = np.zeros_like(biasv)
     dkdbh = np.zeros_like(biash)
+    dkdw,dkdbv,dkdbh = iterde(weights,biasv,biash,data,n_visible)
+    return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
+
+  @autojit
+  def iterde(weights,biasv,biash,data,n_visible):
+    dkdw = np.zeros_like(weights)
+    dkdbv = np.zeros_like(biasv)
+    dkdbh = np.zeros_like(biash)
     for ii in xrange(n_visible):
 	diffe = np.exp(.5*energyDiff(weights,biasv,biash,data,ii))
         dkdw += np.einsum('ijk,i->jk',dedwDiff(weights,biash,data,ii),diffe)
-        #dkdbv += np.einsum('ij,i->j',dedbvDiff(data,ii),diffe)
-        dkdbv[ii] += np.dot(1.+2*data[:,ii],diffe)
+        dkdbv[ii] += np.dot(1.-2.*data[:,ii],diffe)
         dkdbh += np.einsum('ij,i->j',dedbhDiff(weights,biash,data,ii),diffe)
-    return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
+    return (dkdw,dkdbv,dkdbh)
 
 
 def energyDiff(weights,biasv,biash,data,n):
@@ -78,7 +94,7 @@ def energyDiff(weights,biasv,biash,data,n):
         Biases for hidden units
     """
     flip = data.copy()
-    flip[:,n] = 1-flip[:,n]
+    flip[:,n] = 1.-flip[:,n]
     logTerm = np.sum(np.log(1.+np.exp(biash+data.dot(weights))),axis=1)
     logTermBF = np.sum(np.log(1.+np.exp(biash+flip.dot(weights))),axis=1)
     return (-data[:,n]*biasv[n]-logTerm)-(-flip[:,n]*biasv[n]-logTermBF)
@@ -86,7 +102,7 @@ def energyDiff(weights,biasv,biash,data,n):
 def dedwDiff(weights,biash,data,n):
     n_data = data.shape[0]
     flip = data.copy()
-    flip[:,n] = 1-flip[:,n]
+    flip[:,n] = 1.-flip[:,n]
     terms = biash+data.dot(weights)
     termsBF = terms+(1.-2*np.outer(data[:,n],weights[n,:]))
     dedw = -np.einsum('ij,ik->ijk',data,sigm(terms))
