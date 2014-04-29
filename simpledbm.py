@@ -473,6 +473,34 @@ class sdbm(object):
             vis = self.sampleVisible(state)
         state[0] = vis
         return state
+
+    def generateConfabulations(self,vis,n_burn,n_keep,steps):
+        """Generate n_keep confabulations after n_burn burn-in for the visible layer.
+           Output is P(v|h), from sampling, not a sample of v.
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Visible data to initially condition on during Gibbs
+            sampling
+
+        n_burn : int
+            Number of samples to throw out
+
+        n_keep : int
+            number of samples to keep
+
+        steps : int
+            Number of steps to gibbs sample
+        """
+        confabs = np.zeros(shape=(n_keep,self.n_units))
+        for ii in xrange(n_burn):
+            self.sampleFull(vis,steps)
+        for ii in xrange(n_keep):
+            state = self.sampleFull(vis,steps)
+            terms = self.bias[0]+np.dot(self.weights[0],state[1])
+            confabs[ii] = sigm(terms)
+        return confabs
     
     def curEnergy(self):
         """Calculate current energy of DBM
