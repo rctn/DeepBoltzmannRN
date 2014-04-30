@@ -104,7 +104,7 @@ def dedwDiff(weights,biash,data,n):
     flip = data.copy()
     flip[:,n] = 1.-flip[:,n]
     terms = biash+data.dot(weights)
-    termsBF = terms+(1.-2*np.outer(data[:,n],weights[n,:]))
+    termsBF = biash+flip.dot(weights)
     dedw = -np.einsum('ij,ik->ijk',data,sigm(terms))
     dedwBF = -np.einsum('ij,ik->ijk',flip,sigm(termsBF))
     return dedw-dedwBF
@@ -116,8 +116,10 @@ def dedbvDiff(data,n):
 
 def dedbhDiff(weights,biash,data,n):
     n_data = data.shape[0]
+    flip = data.copy()
+    flip[:,n] = 1-flip[:,n]
     terms = biash+data.dot(weights)
-    termsBF = terms+(1.-2*np.outer(data[:,n],weights[n,:]))
+    termsBF = biash+flip.dot(weights)
     dedbh = -sigm(terms)
     dedbhBF = -sigm(termsBF)
     return dedbh-dedbhBF
