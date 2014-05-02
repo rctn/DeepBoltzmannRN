@@ -146,30 +146,28 @@ class sdbm(object):
             dw = np.zeros_like(self.weights)
             db = np.zeros_like(self.bias)
             for layer_i in xrange(self.n_layers):
-                diffeL = np.tile(-self.bias[layer_i], (nData,1))
-                diffeU = np.tile(-self.bias[layer_i], (nData,1))
+                diffe = np.tile(self.bias[layer_i], (nData,1))
                 # All layers except top
                 if layer_i < (self.n_layers-1):
                     W_h = self.weights[layer_i].dot(muStates[:,layer_i+1].T).T
-                    diffeL += -W_h
+                    diffe += W_h
                 # All layers except bottom (visible)
                 if layer_i > 0:
                     vT_W = muStates[:,layer_i-1].dot(self.weights[layer_i-1])
-                    diffeU += -vT_W
+                    diffe += vT_W
                 
                 # Bias update
-                diffebL = -muStates[:,layer_i]*np.exp(.5*diffeL) + (1.-muStates[:,layer_i])*np.exp(-.5*diffeL)
-                db[layer_i] += diffebL.sum(0)
+                diffeb = -muStates[:,layer_i]*np.exp(.5*-diffe) + (1.-muStates[:,layer_i])*np.exp(.5*diffe)
+                db[layer_i] += diffeb.sum(0)
 
                 # Weights update
                 # All layers except top
                 if layer_i < (self.n_layers-1):
-                    dkdw = np.einsum('ij,ik->jk',diffebL,muStates[:,layer_i+1])
+                    dkdw = np.einsum('ij,ik->jk',diffeb,muStates[:,layer_i+1])
                     dw[layer_i] += dkdw
                 # All layers except bottom (visible)
                 if layer_i > 0:
-                    diffebU = -muStates[:,layer_i]*np.exp(.5*diffeU) + (1.-muStates[:,layer_i])*np.exp(-.5*diffeU)
-                    dkdw = np.einsum('ij,ik->jk',muStates[:,layer_i-1],diffebU)
+                    dkdw = np.einsum('ij,ik->jk',muStates[:,layer_i-1],diffeb)
                     dw[layer_i-1] += dkdw
 
             self.weights -= eps*dw/float(nData)
@@ -334,27 +332,23 @@ class sdbm(object):
         nData = vis.shape[0]
 
         #Find meanfield estimates
-        fullStates = self.ExHidden(vis,meanSteps)
+        muStates = self.ExHidden(vis,meanSteps)
         if intOnly:
             fullStates = np.around(fullStates)
 
         flows = 0.
         for layer_i in xrange(self.n_layers):
-            originalState = fullStates[:,layer_i,:]
-            flippedState = 1.-fullStates[:,layer_i,:]
-
-            diffe = (-originalState+flippedState)*self.bias[layer_i]
+            diffe = np.tile(self.bias[layer_i], (nData,1))
             # All layers except top
             if layer_i < (self.n_layers-1):
-                W_h = self.weights[layer_i].dot(fullStates[:,layer_i+1].T).T
-                diffe += (-originalState+flippedState)*W_h
+                W_h = self.weights[layer_i].dot(muStates[:,layer_i+1].T).T
+                diffe += W_h
             # All layers except bottom (visible)
             if layer_i > 0:
-                vT_W = fullStates[:,layer_i-1].dot(self.weights[layer_i-1])
-                diffe += vT_W*(-originalState+flippedState)
-                
-            diffe = np.exp(.5*(diffe))
-            flows += diffe.sum()
+                vT_W = muStates[:,layer_i-1].dot(self.weights[layer_i-1])
+                diffe += vT_W
+            exK = muStates[:,layer_i]*np.exp(.5*-diffe) + (1.-muStates[:,layer_i])*np.exp(.5*diffe)
+            flows += exK.sum()
 
         return flows/nData
 

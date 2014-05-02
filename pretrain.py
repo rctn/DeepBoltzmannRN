@@ -69,7 +69,7 @@ def iterde(weights,biasv,biash,data,n_visible):
     dkdbv = np.zeros_like(biasv)
     dkdbh = np.zeros_like(biash)
     for ii in xrange(n_visible):
-	diffe = np.exp(.5*energyDiff(weights,biasv,biash,data,ii))
+        diffe = np.exp(.5*energyDiff(weights,biasv,biash,data,ii))
         dkdw += np.einsum('ijk,i->jk',dedwDiff(weights,biash,data,ii),diffe)
         dkdbv[ii] += np.dot(1.-2.*data[:,ii],diffe)
         dkdbh += np.einsum('ij,i->j',dedbhDiff(weights,biash,data,ii),diffe)
@@ -101,7 +101,7 @@ def dedwDiff(weights,biash,data,n):
     flip = data.copy()
     flip[:,n] = 1.-flip[:,n]
     terms = biash+data.dot(weights)
-    termsBF = terms+(1.-2*np.outer(data[:,n],weights[n,:]))
+    termsBF = biash+flip.dot(weights)
     dedw = -np.einsum('ij,ik->ijk',data,sigm(terms))
     dedwBF = -np.einsum('ij,ik->ijk',flip,sigm(termsBF))
     return dedw-dedwBF
@@ -113,8 +113,10 @@ def dedbvDiff(data,n):
 
 def dedbhDiff(weights,biash,data,n):
     n_data = data.shape[0]
+    flip = data.copy()
+    flip[:,n] = 1-flip[:,n]
     terms = biash+data.dot(weights)
-    termsBF = terms+(1.-2*np.outer(data[:,n],weights[n,:]))
+    termsBF = biash+flip.dot(weights)
     dedbh = -sigm(terms)
     dedbhBF = -sigm(termsBF)
     return dedbh-dedbhBF
