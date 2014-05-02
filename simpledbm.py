@@ -2,6 +2,7 @@ from __future__ import division
 from __future__ import print_function
 import pretrain
 import numpy as np
+import copy
 
 def sigm(x):
     """Sigmoid function
@@ -57,7 +58,7 @@ class sdbm(object):
     rng : RandomState, optional
         Random number generator to use to make results reproducible
     """
-    def __init__(self,n_units,weights=None,bias=None,state=None,rng=np.random.RandomState(23455)):
+    def __init__(self,n_units,weights=None,bias=None,state=None,rng=np.random.RandomState(235)):
         if weights is None:
             self.weights = []
             for layer_i in range(1,len(n_units)):
@@ -240,33 +241,32 @@ class sdbm(object):
 
         Parameters
         ----------
-        vis : array-like, shape (n_data, n_units)
+        vis : array-like, shape (n_units)
             Visible data to condition on
 
         steps : int
             Number of steps to gibbs sample
         """
-        stateUp = np.copy(self.state)
+        stateUp = copy.deepcopy(self.state)
         stateUp[0] = vis
         for ii in xrange(steps):
-            rands = self.rng.rand(2,self.n_layers-1,self.n_units)
             # Sample bottom layers going up
             for jj in xrange(1,self.n_layers-1):
                 terms = self.bias[jj] + stateUp[jj-1].dot(self.weights[jj-1]) + self.weights[jj].dot(stateUp[jj+1])
                 probs = sigm(terms)
-                stateUp[jj] = rands[0,jj-1] <= probs
+                stateUp[jj] = self.rng.rand(self.n_units[jj]) <= probs
 
             # Sampling for the top layer, before going back down
             top = self.n_layers-1
             terms = self.bias[top] + stateUp[top-1].dot(self.weights[top-1])
             probs = sigm(terms)
-            stateUp[top] = rands[1,top-1] <= probs
+            stateUp[top] = self.rng.rand(self.n_units[top]) <= probs
 
             # Sample bottom hidden layers going down
             for jj in xrange(self.n_layers-2,0,-1):
                 terms = self.bias[jj] + stateUp[jj-1].dot(self.weights[jj-1]) + self.weights[jj].dot(stateUp[jj+1])
                 probs = sigm(terms)
-                stateUp[jj] = rands[1,jj-1] <= probs
+                stateUp[jj] = self.rng.rand(self.n_units[jj]) <= probs
 
         return stateUp
 
@@ -278,10 +278,9 @@ class sdbm(object):
         state : array-like, shape (n_layers, n_units)
             State of all the units
         """
-        rands = self.rng.rand(self.n_units)
         terms = self.bias[0] + self.weights[0].dot(state[1])
         probs = sigm(terms)
-        vis = rands <= probs
+        vis = self.rng.rand(self.n_units[0]) <= probs
 
         return vis
 
@@ -322,7 +321,7 @@ class sdbm(object):
         steps : int
             Number of steps to gibbs sample
         """
-        confabs = np.zeros(shape=(n_keep,self.n_units))
+        confabs = np.zeros((n_keep,vis.shape[0]))
         for ii in xrange(n_burn):
             vis = self.sampleFull(vis,steps)[0]
         for ii in xrange(n_keep):
@@ -366,13 +365,13 @@ class sdbm(object):
             diffe = np.tile(self.bias[layer_i], (nData,1))
             # All layers except top
             if layer_i < (self.n_layers-1):
-                W_h = self.weights[layer_i].dot(muStates[:,layer_i+1].T).T
+                W_h = self.weights[layer_i].dot(muStates[layer_i+1].T).T
                 diffe += W_h
             # All layers except bottom (visible)
             if layer_i > 0:
-                vT_W = muStates[:,layer_i-1].dot(self.weights[layer_i-1])
+                vT_W = muStates[layer_i-1].dot(self.weights[layer_i-1])
                 diffe += vT_W
-            exK = muStates[:,layer_i]*np.exp(.5*-diffe) + (1.-muStates[:,layer_i])*np.exp(.5*diffe)
+            exK = muStates[layer_i]*np.exp(.5*-diffe) + (1.-muStates[layer_i])*np.exp(.5*diffe)
             flows += exK.sum()
 
         return flows/nData
