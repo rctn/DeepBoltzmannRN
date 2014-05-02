@@ -31,8 +31,8 @@ def flow(params,*args):
     k = eps*sflow/n_data
     return k
 
-  @autojit
-  def iterEnergy(weights,biasv,biash,data,n_visible):
+@autojit
+def iterEnergy(weights,biasv,biash,data,n_visible):
     result = 0.
     for ii in xrange(n_visible):
         result+= np.exp(.5*(energyDiff(weights,biasv,biash,data,ii)))
@@ -66,13 +66,13 @@ def gradFlow(params,*args):
     dkdw,dkdbv,dkdbh = iterde(weights,biasv,biash,data,n_visible)
     return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
 
-  @autojit
-  def iterde(weights,biasv,biash,data,n_visible):
+@autojit
+def iterde(weights,biasv,biash,data,n_visible):
     dkdw = np.zeros_like(weights)
     dkdbv = np.zeros_like(biasv)
     dkdbh = np.zeros_like(biash)
     for ii in xrange(n_visible):
-	diffe = np.exp(.5*energyDiff(weights,biasv,biash,data,ii))
+        diffe = np.exp(.5*energyDiff(weights,biasv,biash,data,ii))
         dkdw += np.einsum('ijk,i->jk',dedwDiff(weights,biash,data,ii),diffe)
         dkdbv[ii] += np.dot(1.-2.*data[:,ii],diffe)
         dkdbh += np.einsum('ij,i->j',dedbhDiff(weights,biash,data,ii),diffe)
