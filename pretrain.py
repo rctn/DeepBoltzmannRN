@@ -1,7 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import fmin_l_bfgs_b as bfgs
 from numba import autojit
 
 def flow(params,*args):
@@ -26,7 +26,7 @@ def flow(params,*args):
     biasv = params[num:num+n_visible]
     num += n_visible
     biash = params[num:num+n_hidden]
-    sflow = iterEnergy(weights,biasv,biash,data,n_visible)
+    sflow = np.sum(iterEnergy(weights,biasv,biash,data,n_visible))
     #np.sum([np.exp(.5*(energyDiff(weights,biasv,biash,data,ii))) for ii in xrange(n_visible)])
     k = eps*sflow/n_data
     return k
@@ -60,11 +60,8 @@ def gradFlow(params,*args):
     biasv = params[num:num+n_visible]
     num += n_visible
     biash = params[num:num+n_hidden]
-    dkdw = np.zeros_like(weights)
-    dkdbv = np.zeros_like(biasv)
-    dkdbh = np.zeros_like(biash)
     dkdw,dkdbv,dkdbh = iterde(weights,biasv,biash,data,n_visible)
-    return eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
+    return .5*eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
 
 @autojit
 def iterde(weights,biasv,biash,data,n_visible):
@@ -181,13 +178,20 @@ class preRBM(object):
             self.biash[:num] = biash 
             self.biash[num:] = biash
 
-    def train(self,eps,data):
+    def train(self,eps,data,nIter = None):
+        if nIter is None:
+            nIter = 15000
         if self.layer == 'bottom':
             states = np.tile(data,(1,2))
         else:
             states = data
         params = np.concatenate((self.weights.flatten(),self.biasv,self.biash))
-        params = minimize(flow,params,method='L-BFGS-B',jac=gradFlow,args=(eps,states,self.n_visible,self.n_hidden)).x
+        print('K pre: '+str(flow(params,eps,states,self.n_visible,self.n_hidden)))
+        print('gradK pre: '+str(gradFlow(params,eps,states,self.n_visible,self.n_hidden)))
+        params,f,d = bfgs(flow,params,fprime=gradFlow,args=(eps,states,self.n_visible,self.n_hidden),iprint=0,maxiter = nIter)
+        print(d['warnflag'])
+        print('K post: '+str(f))
+        print('gradK post: '+str(d['grad']))
         num = self.n_visible*self.n_hidden
         self.weights = params[:num].reshape(self.n_visible,self.n_hidden)
         self.biasv = params[num:num+self.n_visible]
@@ -211,20 +215,28 @@ class preRBM(object):
         return (weights,biasv,biash)
 
     def trainStep(self,eps,data,steps):
+        if self.layer == 'bottom':
+            states = np.tile(data,(1,2))
+        else:
+            states = data
         dkdw = np.zeros_like(self.weights)
         dkdbv = np.zeros_like(self.biasv)
         dkdbh = np.zeros_like(self.biash)
         n_data = data.shape[0]
+        params = np.concatenate((self.weights.flatten(),self.biasv,self.biash))
+        print('K pre: '+str(flow(params,eps,states,self.n_visible,self.n_hidden)))
         for jj in xrange(steps):
             for ii in xrange(self.n_visible):
-	        diffe = np.exp(.5*energyDiff(self.weights,self.biasv,self.biash,data,ii))
-                dkdw += np.einsum('ijk,i->jk',dedwDiff(self.weights,self.biash,data,ii),diffe)
+	        diffe = np.exp(.5*energyDiff(self.weights,self.biasv,self.biash,states,ii))
+                dkdw += np.einsum('ijk,i->jk',dedwDiff(self.weights,self.biash,states,ii),diffe)
                 #dkdbv += np.einsum('ij,i->j',dedbvDiff(data,ii),diffe)
-                dkdbv[ii] += np.dot(1.+2*data[:,ii],diffe)
-                dkdbh += np.einsum('ij,i->j',dedbhDiff(self.weights,self.biash,data,ii),diffe)
+                dkdbv[ii] += np.dot(1.+2*states[:,ii],diffe)
+                dkdbh += np.einsum('ij,i->j',dedbhDiff(self.weights,self.biash,states,ii),diffe)
             self.weights -= eps*dkdw/float(n_data)
-            self.biasv -= eps*dkdbv/float(n_data)
-            self.biash -= eps*dkdbh/float(n_data)
+            self.biasv -= .5*eps*dkdbv/float(n_data)
+            self.biash -= .5*eps*dkdbh/float(n_data)
+        params = np.concatenate((self.weights.flatten(),self.biasv,self.biash))
+        print('K post: '+str(flow(params,eps,states,self.n_visible,self.n_hidden)))
 
         self.constrainWeights()
         if self.layer == 'bottom':
