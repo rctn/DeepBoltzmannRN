@@ -3,7 +3,6 @@ from __future__ import print_function
 import pretrain
 import numpy as np
 
-
 def sigm(x):
     """Sigmoid function
 
@@ -14,6 +13,21 @@ def sigm(x):
     """
     return 1./(1.+np.exp(-x))
 
+def list_zeros_like(l):
+    """Initialize a list of arrays with zeros like the
+    arrays in a given list.
+
+    Parameters
+    ----------
+    l : list
+        List of arrays
+    """
+    new_l = []
+    for a in l:
+        new_l.append(np.zeros_like(a))
+
+    return new_l
+
 class sdbm(object):
     """Simple Deep Boltzmann Machine (DBM)
 
@@ -22,49 +36,56 @@ class sdbm(object):
 
     Parameters
     ----------
-    n_layers : int
-        Number of layers
-
-    n_units : int
+    n_units : array-like, int, shape (n_layers)
         Number of units in each layer
 
-    weights : array-like, shape (n_layers-1, n_units, n_units), optional
-        Initialize the weights
+    weights : array-like, list, optional
+        Initialize the weights with a list of length (n_layers-1). 
+        Each element in the list corresponds to a numpy array of shape 
+        (n_units_prev_layer, n_units_current_layer).
 
-    bias : array-like, shape (n_layers, n_units), optional
-        Initialize the biases
+    bias : array-like, list, optional
+        Initialize the biases with a list of length (n_layers). Each
+        element in the list corresponds to a numpy array of shape 
+        (n_units_current_layer).
 
-    state : array-like, shape (n_layers, n_units), optional
-        Initialize the state of all units
+    state : array-like, list, optional
+        Initialize the state of all units with a list of length (n_layers).
+        Each element in the list corresponds to a numpy array of shape
+        (n_units_current_layer).
 
     rng : RandomState, optional
         Random number generator to use to make results reproducible
     """
-    def __init__(self,n_layers,n_units,weights=None,bias=None,state=None,rng=np.random.RandomState(23455)):
-        self.rng = rng
-
+    def __init__(self,n_units,weights=None,bias=None,state=None,rng=np.random.RandomState(23455)):
         if weights is None:
-            self.weights = rng.uniform(low=-4 * np.sqrt(6. / (n_layers*n_units)),
-                                        high=4 * np.sqrt(6. / (n_layers*n_units)),
-                                        size=(n_layers-1,n_units,n_units))
+            self.weights = []
+            for layer_i in range(1,len(n_units)):
+                self.weights.append(rng.uniform(low=-4 * np.sqrt(6. / (n_units[layer_i-1] + n_units[layer_i])),
+                                            high=4 * np.sqrt(6. / (n_units[layer_i-1] + n_units[layer_i])),
+                                            size=(n_units[layer_i-1],n_units[layer_i])))
         else:
             self.weights = weights
         if bias is None:
-            self.bias = rng.uniform(low=-4 * np.sqrt(6. / (n_layers*n_units)),
-                                    high=4 * np.sqrt(6. / (n_layers*n_units)),
-                                    size=(n_layers,n_units))
+            self.bias = []
+            for layer_i in range(len(n_units)):
+                self.bias.append(rng.uniform(low=-4 * np.sqrt(6. / (n_units[layer_i])),
+                                        high=4 * np.sqrt(6. / (n_units[layer_i])),
+                                        size=n_units[layer_i]))
         else:
             self.bias = bias
         if state is None:
-            self.state = rng.randint(2,size=(n_layers,n_units))
+            self.state = []
+            for layer_i in range(len(n_units)):
+                self.state.append(rng.randint(2,size=(n_units[layer_i])))
         else:
             self.state = state
 
+        self.rng = rng
         self.meanState = None
-
-           
-        self.n_layers = n_layers
+        self.n_layers = len(n_units)
         self.n_units = n_units
+        self.temperature = 1.
 
     def pretrain(self,vis,eps):
         """Trains each layer with a modified RBM
@@ -77,6 +98,7 @@ class sdbm(object):
         eps : float
             coefficient for MPF
         """
+        # TODO: adjust this method for variable n_units
         # Train bottom layer
         rbm = pretrain.rbm(self.n_units,self.n_units,'bottom',self.rng)
         weights,biasv,biash = rbm.train(eps,vis)
@@ -119,18 +141,18 @@ class sdbm(object):
         nData = vis.shape[0]
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
-        #Find meanfield estimates
+        # Find meanfield estimates
         muStates = self.ExHidden(vis,meanSteps)
 
         ####
         # meanHStates = muStates.mean(0)[1:]
         # tmask = (meanHStates > .9) + (meanHStates < .1)
         # tmask = np.tile(tmask,(nData,1))
-        # tmask = (self.rng.uniform(size=tmask.shape) < .1) & tmask
+        # tmask = (self.rng.uniform(size=tmask.shape) < .1) * tmask
 
-        # hstemp = muStates[:,1:,:]
-        # hstemp[tmask[:,np.newaxis,:]] = 0.5
-        # muStates[:,:1,:] = hstemp
+        # hstemp = muStates[:,1,:]
+        # hstemp[tmask] = 0.5
+        # muStates[:,1,:] = hstemp
 
         # tmask = tmask.ravel()
         # reset = ((self.rng.uniform(size=(muStates.shape[0], tmask.shape[0])) < 0.1) & tmask.reshape((1,-1))).ravel()
@@ -141,37 +163,34 @@ class sdbm(object):
         # muStates = muStates.reshape((fullStatesShape))
 
         ###
-
         for ii in xrange(steps):
-            dw = np.zeros_like(self.weights)
-            db = np.zeros_like(self.bias)
             for layer_i in xrange(self.n_layers):
                 diffe = np.tile(self.bias[layer_i], (nData,1))
                 # All layers except top
                 if layer_i < (self.n_layers-1):
-                    W_h = self.weights[layer_i].dot(muStates[:,layer_i+1].T).T
+                    W_h = self.weights[layer_i].dot(muStates[layer_i+1].T).T
                     diffe += W_h
                 # All layers except bottom (visible)
                 if layer_i > 0:
-                    vT_W = muStates[:,layer_i-1].dot(self.weights[layer_i-1])
+                    vT_W = muStates[layer_i-1].dot(self.weights[layer_i-1])
                     diffe += vT_W
                 
                 # Bias update
-                diffeb = -muStates[:,layer_i]*np.exp(.5*-diffe) + (1.-muStates[:,layer_i])*np.exp(.5*diffe)
-                db[layer_i] += diffeb.sum(0)
+                diffeb = -muStates[layer_i]*np.exp(.5*-diffe) + (1.-muStates[layer_i])*np.exp(.5*diffe)
+                dkdbl = diffeb.sum(0)
+                self.bias[layer_i] -= eps*dkdbl/float(nData)
 
                 # Weights update
                 # All layers except top
                 if layer_i < (self.n_layers-1):
-                    dkdw = np.einsum('ij,ik->jk',diffeb,muStates[:,layer_i+1])
-                    dw[layer_i] += dkdw
+                    dkdwl = np.einsum('ij,ik->jk',diffeb,muStates[layer_i+1])
+                    # TODO: check update correctness for RBM
+                    self.weights[layer_i] -= eps*dkdwl/float(nData)
                 # All layers except bottom (visible)
                 if layer_i > 0:
-                    dkdw = np.einsum('ij,ik->jk',muStates[:,layer_i-1],diffeb)
-                    dw[layer_i-1] += dkdw
-
-            self.weights -= eps*dw/float(nData)
-            self.bias -= eps*db/float(nData)
+                    dkdwlprev = np.einsum('ij,ik->jk',muStates[layer_i-1],diffeb)
+                    # TODO: check update correctness for RBM
+                    self.weights[layer_i-1] -= eps*dkdwlprev/float(nData)
 
     def ExHidden(self,vis,meanSteps):
         """Finds Expectation for hidden units using mean-field variational approach
@@ -187,25 +206,31 @@ class sdbm(object):
         updateSteps : int
             Number of times to run through layers.
         """
+        nData = vis.shape[0]
         # Initialize state to visible
-        if (self.meanState is None) or (self.meanState.shape[0] != vis.shape[0]):
-            self.meanState = np.zeros(shape=(vis.shape[0],self.n_layers,self.n_units))+.5
-        self.meanState[:,0] = vis
+        if (self.meanState is None) or (self.meanState[0].shape[0] != nData):
+            self.meanState = []
+            for n_unit in self.n_units:
+                self.meanState.append(np.zeros((nData,n_unit))+.5)
+        self.meanState[0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+self.meanState[:,jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[:,jj+1].T).T
-                self.meanState[:,jj] = sigm(terms)
+                terms = np.tile(self.bias[jj],(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
+                # TODO: check for size in terms
+                self.meanState[jj] = sigm(terms)
             # Find activation for top layer
             # Apply mean field equations
-            terms = np.tile(self.bias[self.n_layers-1],(vis.shape[0],1))+self.meanState[:,self.n_layers-2].dot(self.weights[self.n_layers-2])
-            self.meanState[:,self.n_layers-1] = sigm(terms)
+            terms = np.tile(self.bias[self.n_layers-1],(nData,1))+self.meanState[self.n_layers-2].dot(self.weights[self.n_layers-2])
+            # TODO: check for size in terms
+            self.meanState[self.n_layers-1] = sigm(terms)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
                 # Apply mean field equations
-                terms = np.tile(self.bias[jj],(vis.shape[0],1))+self.meanState[:,jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[:,jj+1].T).T
-                self.meanState[:,jj] = sigm(terms)
+                terms = np.tile(self.bias[jj],(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
+                # TODO: check for size in terms
+                self.meanState[jj] = sigm(terms)
 
         return self.meanState
             
