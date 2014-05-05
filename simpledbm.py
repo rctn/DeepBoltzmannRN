@@ -246,7 +246,7 @@ class sdbm(object):
             self.meanState = []
             for n_unit in self.n_units:
                 self.meanState.append(np.zeros((nData,n_unit))+.5)
-            self.meanState[0] = vis
+        self.meanState[0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
