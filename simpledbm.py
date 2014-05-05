@@ -29,6 +29,39 @@ def list_zeros_like(l):
 
     return new_l
 
+def flow(init_W,init_b,nData):
+    import theano
+    import theano.tensor as T
+
+    n_layers = len(init_b)
+
+    bias = []
+    weights = []
+    muStates = []
+    for layer_i in xrange(n_layers):
+        bias.append(theano.shared(value=init_b[layer_i],
+                                    name='b'+str(layer_i),
+                                    borrow=True))
+        weights.append(theano.shared(value=init_W[layer_i],
+                                    name='W'+str(layer_i),
+                                    borrow=True))
+        muStates.append(T.matrix('mu'+str(layer_i)))
+
+    for layer_i in xrange(n_layers):
+        diffe = T.tile(bias[layer_i], (nData,1))
+        # All layers except top
+        if layer_i < (n_layers-1):
+            W_h = weights[layer_i].dot(muStates[layer_i+1].T).T
+            diffe += W_h
+
+        if layer_i > 0:
+            vT_W = muStates[layer_i-1].dot(weights[layer_i-1])
+            diffe += vT_W
+
+        exK = muStates[layer_i]*T.exp(.5*-diffe) + (1.-muStates[layer_i])*T.exp(.5*diffe)
+        flows += exK.sum()
+    return flows
+
 class sdbm(object):
     """Simple Deep Boltzmann Machine (DBM)
 
@@ -143,7 +176,7 @@ class sdbm(object):
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
         # Find meanfield estimates
-        muStates = self.ExHidden(vis,meanSteps)
+        muStates = self.ExHidden(vis,meanSteps,sample=False)
 
         ####
         # meanHStates = muStates.mean(0)[1:]
@@ -178,22 +211,22 @@ class sdbm(object):
                 
                 # Bias update
                 diffeb = -muStates[layer_i]*np.exp(.5*-diffe) + (1.-muStates[layer_i])*np.exp(.5*diffe)
-                dkdbl = diffeb.sum(0)
+                dkdbl = 0.5*diffeb.sum(0)
                 self.bias[layer_i] -= eps*dkdbl/float(nData)
 
                 # Weights update
                 # All layers except top
                 if layer_i < (self.n_layers-1):
-                    dkdwl = np.einsum('ij,ik->jk',diffeb,muStates[layer_i+1])
+                    dkdwl = 0.5*np.einsum('ij,ik->jk',diffeb,muStates[layer_i+1])
                     # TODO: check update correctness for RBM
                     self.weights[layer_i] -= eps*dkdwl/float(nData)
                 # All layers except bottom (visible)
                 if layer_i > 0:
-                    dkdwlprev = np.einsum('ij,ik->jk',muStates[layer_i-1],diffeb)
+                    dkdwlprev = 0.5*np.einsum('ij,ik->jk',muStates[layer_i-1],diffeb)
                     # TODO: check update correctness for RBM
                     self.weights[layer_i-1] -= eps*dkdwlprev/float(nData)
 
-    def ExHidden(self,vis,meanSteps):
+    def ExHidden(self,vis,meanSteps,sample=False):
         """Finds Expectation for hidden units using mean-field variational approach
 
         Parameters
@@ -204,8 +237,8 @@ class sdbm(object):
         meanSteps : int
             Number of mean-field steps to cycle through
 
-        updateSteps : int
-            Number of times to run through layers.
+        sample : boolean, optional
+            Return a sampling based on the mean-field values
         """
         nData = vis.shape[0]
         # Initialize state to visible
@@ -213,7 +246,7 @@ class sdbm(object):
             self.meanState = []
             for n_unit in self.n_units:
                 self.meanState.append(np.zeros((nData,n_unit))+.5)
-        self.meanState[0] = vis
+            self.meanState[0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
@@ -232,7 +265,11 @@ class sdbm(object):
                 terms = np.tile(self.bias[jj],(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
                 # TODO: check for size in terms
                 self.meanState[jj] = sigm(terms)
-
+        if sample:
+            sampleState = []
+            for layerState in self.meanState:
+                sampleState.append((self.rng.rand(*layerState.shape) <= layerState).astype('float'))
+            return sampleState
         return self.meanState
             
     def sampleHidden(self,vis,steps):
@@ -297,7 +334,7 @@ class sdbm(object):
             Number of steps to gibbs sample
         """
         for i in xrange(steps):
-            state = self.sampleHidden(vis,3)
+            state = self.sampleHidden(vis,4)
             vis = self.sampleVisible(state)
         state[0] = vis
         return state
