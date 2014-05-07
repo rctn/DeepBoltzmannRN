@@ -48,7 +48,7 @@ def flow(init_W,init_b,nData):
         muStates.append(T.matrix('mu'+str(layer_i)))
 
     for layer_i in xrange(n_layers):
-        diffe = T.tile(bias[layer_i], (nData,1))
+        diffe = T.tile(bias[layer_i].copy(), (nData,1))
         # All layers except top
         if layer_i < (n_layers-1):
             W_h = weights[layer_i].dot(muStates[layer_i+1].T).T
@@ -103,9 +103,10 @@ class sdbm(object):
         if bias is None:
             self.bias = []
             for layer_i in range(len(n_units)):
-                self.bias.append(rng.uniform(low=-4 * np.sqrt(6. / (n_units[layer_i])),
-                                        high=4 * np.sqrt(6. / (n_units[layer_i])),
-                                        size=n_units[layer_i]))
+                # self.bias.append(rng.uniform(low=-4 * np.sqrt(6. / (n_units[layer_i])),
+                #                         high=4 * np.sqrt(6. / (n_units[layer_i])),
+                #                         size=n_units[layer_i]))
+                self.bias.append(np.zeros(n_units[layer_i]))
         else:
             self.bias = bias
         if state is None:
@@ -177,7 +178,6 @@ class sdbm(object):
         # observed data)
         # Find meanfield estimates
         muStates = self.ExHidden(vis,meanSteps,sample=False)
-
         ####
         # meanHStates = muStates.mean(0)[1:]
         # tmask = (meanHStates > .9) + (meanHStates < .1)
@@ -198,8 +198,9 @@ class sdbm(object):
 
         ###
         for ii in xrange(steps):
+            dkdw = list_zeros_like(self.weights)
             for layer_i in xrange(self.n_layers):
-                diffe = np.tile(self.bias[layer_i], (nData,1))
+                diffe = np.tile(self.bias[layer_i].copy(), (nData,1))
                 # All layers except top
                 if layer_i < (self.n_layers-1):
                     W_h = self.weights[layer_i].dot(muStates[layer_i+1].T).T
@@ -218,16 +219,83 @@ class sdbm(object):
                 # All layers except top
                 if layer_i < (self.n_layers-1):
                     dkdwl = 0.5*np.einsum('ij,ik->jk',diffeb,muStates[layer_i+1])
-                    # TODO: check update correctness for RBM
-                    self.weights[layer_i] -= eps*dkdwl/float(nData)
+                    dkdw[layer_i] += dkdwl
+                    # self.weights[layer_i] -= eps*dkdwl/float(nData)
+                    import ipdb; ipdb.set_trace()
                 # All layers except bottom (visible)
                 if layer_i > 0:
                     dkdwlprev = 0.5*np.einsum('ij,ik->jk',muStates[layer_i-1],diffeb)
-                    # TODO: check update correctness for RBM
-                    self.weights[layer_i-1] -= eps*dkdwlprev/float(nData)
+                    dkdw[layer_i-1] += dkdwlprev
+                    # self.weights[layer_i-1] -= eps*dkdwlprev/float(nData)
+                    import ipdb; ipdb.set_trace()
+
+            for layer_i in xrange(self.n_layers-1):
+                self.weights[layer_i] -= eps*dkdw[layer_i]/float(nData)
+
+    def ExTrainFull(self,vis,steps,eps,meanSteps):
+        """Adjust weights/biases of the network to minimize probability flow, K via
+        gradient descent.
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Dataset to train on
+
+        steps : int
+            Number of iterations to run MPF (parameter updates)
+
+        eps : float
+            Learning rate
+
+        meanSteps : int
+            Number of mean-field cycles per layer
+        """
+        nData = vis.shape[0]
+        # Propagate visible data up the network (hopefully hidden states can be considered
+        # observed data)
+        # Find meanfield estimates
+        dataStates = self.ExHidden(vis,meanSteps,sample=False)
+        nondataStates = self.ExFull(vis,meanSteps,sample=False)
+        ####
+        # meanHStates = muStates.mean(0)[1:]
+        # tmask = (meanHStates > .9) + (meanHStates < .1)
+        # tmask = np.tile(tmask,(nData,1))
+        # tmask = (self.rng.uniform(size=tmask.shape) < .1) * tmask
+
+        # hstemp = muStates[:,1,:]
+        # hstemp[tmask] = 0.5
+        # muStates[:,1,:] = hstemp
+
+        # tmask = tmask.ravel()
+        # reset = ((self.rng.uniform(size=(muStates.shape[0], tmask.shape[0])) < 0.1) & tmask.reshape((1,-1))).ravel()
+        # fullStatesShape = muStates.shape
+        # muStates = muStates.reshape((-1,))
+
+        # muStates[reset] = 0.7
+        # muStates = muStates.reshape((fullStatesShape))
+
+        ###
+        for ii in xrange(steps):
+            dataE = 0.
+            nondataE = 0.
+            for layer_i in xrange(self.n_layers):
+                dataE += dataStates[layer_i].dot(self.bias[layer_i])
+                nondataE += nondataStates[layer_i].dot(self.bias[layer_i])
+                if layer_i < (self.n_layers-1):
+                    dataE += np.einsum('ij,jk,ik->i',dataStates[layer_i],self.weights[layer_i],dataStates[layer_i+1])
+                    nondataE += np.einsum('ij,jk,ik->i',nondataStates[layer_i],self.weights[layer_i],nondataStates[layer_i+1])
+
+            for layer_i in xrange(self.n_layers):
+                expdiffe = np.exp(0.5*(dataE-nondataE))
+                dkdbl = 0.5*expdiffe.dot(-dataStates[layer_i]+nondataStates[layer_i])
+                self.bias[layer_i] -= eps*dkdbl/float(nData)
+                if layer_i < (self.n_layers-1):
+                    r = -np.einsum('ij,ik->ijk',dataStates[layer_i],dataStates[layer_i+1]) + np.einsum('ij,ik->ijk',nondataStates[layer_i],nondataStates[layer_i+1])
+                    dkdwl = 0.5*np.einsum('i,ijk->jk', expdiffe, r)
+                    self.weights[layer_i] -= eps*dkdwl/float(nData)
 
     def ExHidden(self,vis,meanSteps,sample=False):
-        """Finds Expectation for hidden units using mean-field variational approach
+        """Finds the expectation for hidden units using mean-field variational approach
 
         Parameters
         ----------
@@ -246,32 +314,72 @@ class sdbm(object):
             self.meanState = []
             for n_unit in self.n_units:
                 self.meanState.append(np.zeros((nData,n_unit))+.5)
+
         self.meanState[0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
-                # Apply mean field equations
-                terms = np.tile(self.bias[jj],(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
-                # TODO: check for size in terms
+                terms = np.tile(self.bias[jj].copy(),(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
                 self.meanState[jj] = sigm(terms)
             # Find activation for top layer
-            # Apply mean field equations
-            terms = np.tile(self.bias[self.n_layers-1],(nData,1))+self.meanState[self.n_layers-2].dot(self.weights[self.n_layers-2])
-            # TODO: check for size in terms
+            terms = np.tile(self.bias[self.n_layers-1].copy(),(nData,1))+self.meanState[self.n_layers-2].dot(self.weights[self.n_layers-2])
             self.meanState[self.n_layers-1] = sigm(terms)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
-                # Apply mean field equations
-                terms = np.tile(self.bias[jj],(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
-                # TODO: check for size in terms
+                terms = np.tile(self.bias[jj].copy(),(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
                 self.meanState[jj] = sigm(terms)
+
         if sample:
             sampleState = []
             for layerState in self.meanState:
                 sampleState.append((self.rng.rand(*layerState.shape) <= layerState).astype('float'))
             return sampleState
         return self.meanState
-            
+
+    def ExFull(self,vis,meanSteps,sample=False):
+        """Finds the expectation for all units using mean-field variational approach
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Visible data to condition on
+
+        meanSteps : int
+            Number of mean-field steps to cycle through
+
+        sample : boolean, optional
+            Return a sampling based on the mean-field values
+        """
+        nData = vis.shape[0]
+        # Initialize state to visible
+        if (self.meanState is None) or (self.meanState[0].shape[0] != nData):
+            self.meanState = []
+            for n_unit in self.n_units:
+                self.meanState.append(np.zeros((nData,n_unit))+.5)
+
+        self.meanState[0] = vis
+        for ii in xrange(meanSteps):
+            # Find activations for internal layers
+            for jj in xrange(1,self.n_layers-1):
+                terms = np.tile(self.bias[jj].copy(),(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
+                self.meanState[jj] = sigm(terms)
+            # Find activation for top layer
+            terms = np.tile(self.bias[self.n_layers-1].copy(),(nData,1))+self.meanState[self.n_layers-2].dot(self.weights[self.n_layers-2])
+            self.meanState[self.n_layers-1] = sigm(terms)
+            # Find activations for internal layers going backwards
+            for jj in xrange(self.n_layers-2,0,-1):
+                terms = np.tile(self.bias[jj].copy(),(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
+                self.meanState[jj] = sigm(terms)
+            # Find activation for bottom layer
+            terms = np.tile(self.bias[0].copy(),(nData,1))+self.weights[0].dot(self.meanState[1].T).T
+            self.meanState[0] = sigm(terms)
+        if sample:
+            sampleState = []
+            for layerState in self.meanState:
+                sampleState.append((self.rng.rand(*layerState.shape) <= layerState).astype('float'))
+            return sampleState
+        return self.meanState
+
     def sampleHidden(self,vis,steps):
         """Sample from P(h|v) for the DBM via gibbs sampling for each
         layer: P(h_layer_i|h_layer_i+1, h_layer_i-1)
@@ -373,8 +481,7 @@ class sdbm(object):
         """
         return energy(self.weights,self.bias,self.state)
 
-
-    def flowSamples(self, vis, meanSteps, intOnly=False):
+    def flowSamples(self, vis, epsilon, meanSteps, intOnly=False):
         """Calculate the probability flow K for a given dataset up to
         a factor epsilon (KL divergence between data distribution
         and distribution after an infinitesimal time).
@@ -399,7 +506,7 @@ class sdbm(object):
 
         flows = 0.
         for layer_i in xrange(self.n_layers):
-            diffe = np.tile(self.bias[layer_i], (nData,1))
+            diffe = np.tile(self.bias[layer_i].copy(), (nData,1))
             # All layers except top
             if layer_i < (self.n_layers-1):
                 W_h = self.weights[layer_i].dot(muStates[layer_i+1].T).T
@@ -411,7 +518,7 @@ class sdbm(object):
             exK = muStates[layer_i]*np.exp(.5*-diffe) + (1.-muStates[layer_i])*np.exp(.5*diffe)
             flows += exK.sum()
 
-        return flows/nData
+        return flows*epsilon/nData
 
     def scoreSamples(self, vis, n_samples, steps):
         """Evaluate the fitness of the model for a given dataset. Calculate

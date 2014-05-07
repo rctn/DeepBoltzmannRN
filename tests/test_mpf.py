@@ -12,19 +12,19 @@ def test_checkGradientWeights():
     meanSteps = 3
     eps = 1e-4
     weights_init = copy.deepcopy(dbm.weights)
-
     numerical_dKdw = simpledbm.list_zeros_like(weights_init)
     for layer_i in range(len(weights_init)):
         for unit_i in range(weights_init[layer_i].shape[0]):
             for unit_j in range(weights_init[layer_i].shape[1]):
                 dbm.weights[layer_i][unit_i,unit_j] += eps
-                K_plus_eps = dbm.flowSamples(trn[:10], meanSteps)
+                K_plus_eps = dbm.flowSamples(trn[:1], 1., meanSteps)
                 dbm.weights[layer_i][unit_i,unit_j] -= 2*eps
-                K_minus_eps = dbm.flowSamples(trn[:10], meanSteps)
+                K_minus_eps = dbm.flowSamples(trn[:1], 1., meanSteps)
                 numerical_dKdw[layer_i][unit_i,unit_j] = (K_plus_eps-K_minus_eps)/(2*eps)
+                dbm.weights[layer_i][unit_i,unit_j] += eps
 
     dbm.weights = copy.deepcopy(weights_init)
-    dbm.ExTrain(trn[:10], 1, 1., meanSteps)
+    dbm.ExTrain(trn[:1], 1, 1., meanSteps)
     dKdW = []
     for i in range(len(weights_init)):
         dKdW.append(weights_init[i] - dbm.weights[i])
@@ -51,13 +51,13 @@ def test_checkGradientBias():
     bias_minus_eps[0][9] -= eps
 
     dbm.bias = bias_plus_eps
-    K_plus_eps = dbm.flowSamples(trn[:10], meanSteps)
+    K_plus_eps = dbm.flowSamples(trn[:10], .005, meanSteps)
     dbm.bias = bias_minus_eps
-    K_minus_eps = dbm.flowSamples(trn[:10], meanSteps)
+    K_minus_eps = dbm.flowSamples(trn[:10], .005, meanSteps)
     print((K_plus_eps-K_minus_eps)/(2*eps))
 
     dbm.bias = copy.deepcopy(bias_init)
-    dbm.ExTrain(trn[:10], 1, 1., meanSteps)
+    dbm.ExTrain(trn[:10], 1, .005, meanSteps)
     dKdW = []
     for i in range(len(bias_init)):
         dKdW.append(bias_init[i] - dbm.bias[i])
