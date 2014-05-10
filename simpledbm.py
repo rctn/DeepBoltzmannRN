@@ -290,8 +290,7 @@ class sdbm(object):
                 dkdbl = 0.5*expdiffe.dot(-dataStates[layer_i]+nondataStates[layer_i])
                 self.bias[layer_i] -= eps*dkdbl/float(nData)
                 if layer_i < (self.n_layers-1):
-                    r = -np.einsum('ij,ik->ijk',dataStates[layer_i],dataStates[layer_i+1]) + np.einsum('ij,ik->ijk',nondataStates[layer_i],nondataStates[layer_i+1])
-                    dkdwl = 0.5*np.einsum('i,ijk->jk', expdiffe, r)
+                    dkdwl = .5*(-np.einsum('ij,ik,i->jk',dataStates[layer_i],dataStates[layer_i+1],expdiffe) + np.einsum('ij,ik,i->jk',nondataStates[layer_i],nondataStates[layer_i+1],expdiffe))
                     self.weights[layer_i] -= eps*dkdwl/float(nData)
 
     def ExHidden(self,vis,meanSteps,sample=False):
