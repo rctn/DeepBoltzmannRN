@@ -34,8 +34,14 @@ def flow(params,*args):
 @autojit
 def iterEnergy(weights,biasv,biash,data,n_visible):
     result = 0.
+    energy = -data.dot(biasv)-np.sum(np.log(1.+np.exp(biash+data.dot(weights))),axis=1)
     for ii in xrange(n_visible):
-        result+= np.exp(.5*(energyDiff(weights,biasv,biash,data,ii)))
+        flip = data.copy()
+        flip[:,ii] = 1.-flip[:,ii]
+        terms = biash+data.dot(weights)
+        termsBF = biash+flip.dot(weights)
+        logTermsBF = np.sum(np.log(1.+np.exp(termsBF)),axis=1)
+        result+= np.exp(.5*(energy-(-flip[:,ii]*biasv[ii]-logTermsBF)))
     return result
 
 def gradFlow(params,*args):
@@ -68,58 +74,24 @@ def iterde(weights,biasv,biash,data,n_visible):
     dkdw = np.zeros_like(weights)
     dkdbv = np.zeros_like(biasv)
     dkdbh = np.zeros_like(biash)
+    energy = -data.dot(biasv)-np.sum(np.log(1.+np.exp(biash+data.dot(weights))),axis=1)
     for ii in xrange(n_visible):
-        diffe = np.exp(.5*energyDiff(weights,biasv,biash,data,ii))
-        dkdw += np.einsum('ijk,i->jk',dedwDiff(weights,biash,data,ii),diffe)
+        flip = data.copy()
+        flip[:,ii] = 1.-flip[:,ii]
+        terms = biash+data.dot(weights)
+        sig_terms = sigm(terms)
+        termsBF = biash+flip.dot(weights)
+        sig_termsBF = sigm(termsBF)
+        logTermsBF = np.sum(np.log(1.+np.exp(termsBF)),axis=1)
+
+        diffe = np.exp(.5*(energy-(-flip[:,ii]*biasv[ii]-logTermsBF)))
+
+        dkdw += data.T.dot(-sig_terms*diffe[:,np.newaxis])-flip.T.dot(-sig_termsBF*diffe[:,np.newaxis])
+
         dkdbv[ii] += np.dot(1.-2.*data[:,ii],diffe)
-        dkdbh += np.einsum('ij,i->j',dedbhDiff(weights,biash,data,ii),diffe)
+
+        dkdbh += diffe.dot(-sig_terms-(-sig_termsBF))
     return (dkdw,dkdbv,dkdbh)
-
-
-def energyDiff(weights,biasv,biash,data,n):
-    """Energy function for RBM
-    
-    Parameters
-    ----------
-    weights : array-like, shape (n_units,n_units)
-        Visble to hidden weights
-        
-    biasv : array-like, shape n_units
-        Biases for visible units
-
-    biash : array-like, shape n_units
-        Biases for hidden units
-    """
-    flip = data.copy()
-    flip[:,n] = 1.-flip[:,n]
-    logTerm = np.sum(np.log(1.+np.exp(biash+data.dot(weights))),axis=1)
-    logTermBF = np.sum(np.log(1.+np.exp(biash+flip.dot(weights))),axis=1)
-    return (-data[:,n]*biasv[n]-logTerm)-(-flip[:,n]*biasv[n]-logTermBF)
-
-def dedwDiff(weights,biash,data,n):
-    n_data = data.shape[0]
-    flip = data.copy()
-    flip[:,n] = 1.-flip[:,n]
-    terms = biash+data.dot(weights)
-    termsBF = biash+flip.dot(weights)
-    dedw = -np.einsum('ij,ik->ijk',data,sigm(terms))
-    dedwBF = -np.einsum('ij,ik->ijk',flip,sigm(termsBF))
-    return dedw-dedwBF
-
-def dedbvDiff(data,n):
-    flip = data.copy()
-    flip[:,n] = 1-flip[:,n]
-    return (-data)-(-flip)
-
-def dedbhDiff(weights,biash,data,n):
-    n_data = data.shape[0]
-    flip = data.copy()
-    flip[:,n] = 1-flip[:,n]
-    terms = biash+data.dot(weights)
-    termsBF = biash+flip.dot(weights)
-    dedbh = -sigm(terms)
-    dedbhBF = -sigm(termsBF)
-    return dedbh-dedbhBF
 
 def sigm(x):
     """Sigmoid function
