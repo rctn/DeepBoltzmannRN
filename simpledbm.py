@@ -260,7 +260,7 @@ class sdbm(object):
         # observed data)
         # Find meanfield estimates
         dataStates = self.ExHidden(vis,meanSteps,sample=False)
-        nondataStates = self.ExFull(vis,meanSteps,sample=False)
+        nondataStates = self.ExFull(vis,meanSteps,sample=True)
         ####
         # meanHStates = muStates.mean(0)[1:]
         # tmask = (meanHStates > .9) + (meanHStates < .1)
@@ -448,7 +448,7 @@ class sdbm(object):
 
         Parameters
         ----------
-        vis : array-like, shape (n_units)
+        vis : array-like, shape (n_data, n_units)
             Visible data to initially condition on during Gibbs
             sampling
 
@@ -461,14 +461,17 @@ class sdbm(object):
         steps : int
             Number of steps to gibbs sample
         """
-        confabs = np.zeros((n_keep,vis.shape[0]))
+        nData = vis.shape[0]
+        confabs = np.zeros((n_keep,nData,vis.shape[1]))
         for ii in xrange(n_burn):
-            vis = self.sampleFull(vis,steps)[0]
+            vis = self.ExFull(vis,steps,sample=True)[0]
+        
         for ii in xrange(n_keep):
-            state = self.sampleFull(vis,steps)
+            state = self.ExFull(vis,steps,sample=True)
             vis = state[0]
-            terms = self.bias[0]+np.dot(self.weights[0],state[1])
-            confabs[ii] = self.sigm(terms)
+            terms = np.tile(self.bias[0].copy(),(nData,1))+self.weights[0].dot(state[1].T).T
+            confabs[ii] = self.sigm(terms,sample=False)
+        
         return confabs
     
     def curEnergy(self):
