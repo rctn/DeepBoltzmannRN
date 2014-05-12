@@ -4,16 +4,6 @@ import pretrain
 import numpy as np
 import copy
 
-def sigm(x):
-    """Sigmoid function
-
-    Parameters
-    ----------
-    x : array-like
-        Array of elements to calculate sigmoid for.
-    """
-    return 1./(1.+np.exp(-x))
-
 def list_zeros_like(l):
     """Initialize a list of arrays with zeros like the
     arrays in a given list.
@@ -122,6 +112,23 @@ class sdbm(object):
         self.n_units = n_units
         self.temperature = 1.
 
+    def sigm(self,x,sample=False):
+        """Sigmoid function
+
+        Parameters
+        ----------
+        x : array-like
+            Array of elements to calculate sigmoid for.
+
+        sample : boolean, optional
+            Return a sampling based on the mean-field values
+        """
+        probs = 1./(1.+np.exp(-x))
+        if sample:
+            return self.rng.rand(*probs.shape) <= probs
+
+        return probs
+
     def pretrain(self,vis,eps):
         """Trains each layer with a modified RBM
 
@@ -211,7 +218,7 @@ class sdbm(object):
                     diffe += vT_W
                 
                 # Bias update
-                diffeb = -muStates[layer_i]*np.exp(.5*-diffe) + (1.-muStates[layer_i])*np.exp(.5*diffe)
+                diffeb = -muStates[layer_i]*np.exp(-0.5*diffe) + (1.-muStates[layer_i])*np.exp(0.5*diffe)
                 dkdbl = 0.5*diffeb.sum(0)
                 self.bias[layer_i] -= eps*dkdbl/float(nData)
 
@@ -221,14 +228,12 @@ class sdbm(object):
                     dkdwl = 0.5*np.einsum('ij,ik->jk',diffeb,muStates[layer_i+1])
                     dkdw[layer_i] += dkdwl
                     # self.weights[layer_i] -= eps*dkdwl/float(nData)
-                    import ipdb; ipdb.set_trace()
+                    
                 # All layers except bottom (visible)
                 if layer_i > 0:
                     dkdwlprev = 0.5*np.einsum('ij,ik->jk',muStates[layer_i-1],diffeb)
                     dkdw[layer_i-1] += dkdwlprev
                     # self.weights[layer_i-1] -= eps*dkdwlprev/float(nData)
-                    import ipdb; ipdb.set_trace()
-
             for layer_i in xrange(self.n_layers-1):
                 self.weights[layer_i] -= eps*dkdw[layer_i]/float(nData)
 
@@ -284,9 +289,9 @@ class sdbm(object):
                 if layer_i < (self.n_layers-1):
                     dataE += np.einsum('ij,jk,ik->i',dataStates[layer_i],self.weights[layer_i],dataStates[layer_i+1])
                     nondataE += np.einsum('ij,jk,ik->i',nondataStates[layer_i],self.weights[layer_i],nondataStates[layer_i+1])
-
+            
             for layer_i in xrange(self.n_layers):
-                expdiffe = np.exp(0.5*(dataE-nondataE))
+                expdiffe = np.ones_like(np.exp(0.5*(dataE-nondataE)))
                 dkdbl = 0.5*expdiffe.dot(-dataStates[layer_i]+nondataStates[layer_i])
                 self.bias[layer_i] -= eps*dkdbl/float(nData)
                 if layer_i < (self.n_layers-1):
@@ -309,31 +314,26 @@ class sdbm(object):
         """
         nData = vis.shape[0]
         # Initialize state to visible
-        if (self.meanState is None) or (self.meanState[0].shape[0] != nData):
-            self.meanState = []
-            for n_unit in self.n_units:
-                self.meanState.append(np.zeros((nData,n_unit))+.5)
+        # if (self.meanState is None) or (self.meanState[0].shape[0] != nData):
+        meanState = []
+        for n_unit in self.n_units:
+            meanState.append(np.zeros((nData,n_unit))+.5)
 
-        self.meanState[0] = vis
+        meanState[0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
-                terms = np.tile(self.bias[jj].copy(),(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
-                self.meanState[jj] = sigm(terms)
+                terms = np.tile(self.bias[jj].copy(),(nData,1))+meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(meanState[jj+1].T).T
+                meanState[jj] = self.sigm(terms,sample=sample)
             # Find activation for top layer
-            terms = np.tile(self.bias[self.n_layers-1].copy(),(nData,1))+self.meanState[self.n_layers-2].dot(self.weights[self.n_layers-2])
-            self.meanState[self.n_layers-1] = sigm(terms)
+            terms = np.tile(self.bias[self.n_layers-1].copy(),(nData,1))+meanState[self.n_layers-2].dot(self.weights[self.n_layers-2])
+            meanState[self.n_layers-1] = self.sigm(terms,sample=sample)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
-                terms = np.tile(self.bias[jj].copy(),(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
-                self.meanState[jj] = sigm(terms)
+                terms = np.tile(self.bias[jj].copy(),(nData,1))+meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(meanState[jj+1].T).T
+                meanState[jj] = self.sigm(terms,sample=sample)
 
-        if sample:
-            sampleState = []
-            for layerState in self.meanState:
-                sampleState.append((self.rng.rand(*layerState.shape) <= layerState).astype('float'))
-            return sampleState
-        return self.meanState
+        return meanState
 
     def ExFull(self,vis,meanSteps,sample=False):
         """Finds the expectation for all units using mean-field variational approach
@@ -351,33 +351,29 @@ class sdbm(object):
         """
         nData = vis.shape[0]
         # Initialize state to visible
-        if (self.meanState is None) or (self.meanState[0].shape[0] != nData):
-            self.meanState = []
-            for n_unit in self.n_units:
-                self.meanState.append(np.zeros((nData,n_unit))+.5)
+        # if (self.meanState is None) or (self.meanState[0].shape[0] != nData):
+        meanState = []
+        for n_unit in self.n_units:
+            meanState.append(np.zeros((nData,n_unit))+.5)
 
-        self.meanState[0] = vis
+        meanState[0] = vis
         for ii in xrange(meanSteps):
             # Find activations for internal layers
             for jj in xrange(1,self.n_layers-1):
-                terms = np.tile(self.bias[jj].copy(),(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
-                self.meanState[jj] = sigm(terms)
+                terms = np.tile(self.bias[jj].copy(),(nData,1))+meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(meanState[jj+1].T).T
+                meanState[jj] = self.sigm(terms,sample=sample)
             # Find activation for top layer
-            terms = np.tile(self.bias[self.n_layers-1].copy(),(nData,1))+self.meanState[self.n_layers-2].dot(self.weights[self.n_layers-2])
-            self.meanState[self.n_layers-1] = sigm(terms)
+            terms = np.tile(self.bias[self.n_layers-1].copy(),(nData,1))+meanState[self.n_layers-2].dot(self.weights[self.n_layers-2])
+            meanState[self.n_layers-1] = self.sigm(terms,sample=sample)
             # Find activations for internal layers going backwards
             for jj in xrange(self.n_layers-2,0,-1):
-                terms = np.tile(self.bias[jj].copy(),(nData,1))+self.meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(self.meanState[jj+1].T).T
-                self.meanState[jj] = sigm(terms)
+                terms = np.tile(self.bias[jj].copy(),(nData,1))+meanState[jj-1].dot(self.weights[jj-1])+self.weights[jj].dot(meanState[jj+1].T).T
+                meanState[jj] = self.sigm(terms,sample=sample)
             # Find activation for bottom layer
-            terms = np.tile(self.bias[0].copy(),(nData,1))+self.weights[0].dot(self.meanState[1].T).T
-            self.meanState[0] = sigm(terms)
-        if sample:
-            sampleState = []
-            for layerState in self.meanState:
-                sampleState.append((self.rng.rand(*layerState.shape) <= layerState).astype('float'))
-            return sampleState
-        return self.meanState
+            terms = np.tile(self.bias[0].copy(),(nData,1))+self.weights[0].dot(meanState[1].T).T
+            meanState[0] = self.sigm(terms,sample=sample)
+        
+        return meanState
 
     def sampleHidden(self,vis,steps):
         """Sample from P(h|v) for the DBM via gibbs sampling for each
@@ -397,19 +393,19 @@ class sdbm(object):
             # Sample bottom layers going up
             for jj in xrange(1,self.n_layers-1):
                 terms = self.bias[jj] + stateUp[jj-1].dot(self.weights[jj-1]) + self.weights[jj].dot(stateUp[jj+1])
-                probs = sigm(terms)
+                probs = self.sigm(terms)
                 stateUp[jj] = self.rng.rand(self.n_units[jj]) <= probs
 
             # Sampling for the top layer, before going back down
             top = self.n_layers-1
             terms = self.bias[top] + stateUp[top-1].dot(self.weights[top-1])
-            probs = sigm(terms)
+            probs = self.sigm(terms)
             stateUp[top] = self.rng.rand(self.n_units[top]) <= probs
 
             # Sample bottom hidden layers going down
             for jj in xrange(self.n_layers-2,0,-1):
                 terms = self.bias[jj] + stateUp[jj-1].dot(self.weights[jj-1]) + self.weights[jj].dot(stateUp[jj+1])
-                probs = sigm(terms)
+                probs = self.sigm(terms)
                 stateUp[jj] = self.rng.rand(self.n_units[jj]) <= probs
 
         return stateUp
@@ -423,7 +419,7 @@ class sdbm(object):
             State of all the units
         """
         terms = self.bias[0] + self.weights[0].dot(state[1])
-        probs = sigm(terms)
+        probs = self.sigm(terms)
         vis = self.rng.rand(self.n_units[0]) <= probs
 
         return vis
@@ -472,7 +468,7 @@ class sdbm(object):
             state = self.sampleFull(vis,steps)
             vis = state[0]
             terms = self.bias[0]+np.dot(self.weights[0],state[1])
-            confabs[ii] = sigm(terms)
+            confabs[ii] = self.sigm(terms)
         return confabs
     
     def curEnergy(self):
