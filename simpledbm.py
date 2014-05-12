@@ -579,3 +579,54 @@ class sdbm(object):
         else:
             raise ValueError
 
+    def muTrain(self,vis,steps,eps,meanSteps):
+        """Adjust weights/biases of the network to minimize probability flow, K via
+        gradient descent.
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Dataset to train on
+
+        steps : int
+            Number of iterations to run MPF (parameter updates)
+
+        eps : float
+            Learning rate
+
+        meanSteps : int
+            Number of mean-field cycles per layer
+        """
+        nData = vis.shape[0]
+        # Propagate visible data up the network (hopefully hidden states can be considered
+        # observed data)
+        # Find meanfield estimates
+        muStates = self.ExHidden(vis,meanSteps,sample=False)
+        for ii in xrange(steps):
+            dkdw = list_zeros_like(self.weights)
+            for layer_i in xrange(self.n_layers):
+                diffe = np.tile(self.bias[layer_i].copy(), (nData,1))
+                # All layers except top
+                if layer_i < (self.n_layers-1):
+                    W_h = self.weights[layer_i].dot(muStates[layer_i+1].T).T
+                    diffe += W_h
+                # All layers except bottom (visible)
+                if layer_i > 0:
+                    vT_W = muStates[layer_i-1].dot(self.weights[layer_i-1])
+                    diffe += vT_W
+                diffe = (1.-2.*muStates[layer_i])*diffe
+                
+                # Bias update
+                dkdbl = 0.5*(1.-2.*muStates[layer_i])*np.exp(.5*diffe).sum(0)
+                self.bias[layer_i] -= eps*dkdbl/float(nData)
+
+                # Weights update
+                # All layers except top
+                if layer_i < (self.n_layers-1):
+                    dkdw[layer_i] += .5*(1.-2.*muStates[layer_i]).T.dot(muStates[layer_i+1]*diffe)
+                # All layers except bottom (visible)
+                if layer_i > 0:
+                    dkdw[layer_i-1] += .5*muStates[layer_i-1].T.dot((1.-2*muStates[layer_1])*diffe)
+
+            for layer_i in xrange(self.n_layers-1):
+                self.weights[layer_i] -= eps*dkdw[layer_i]/float(nData)
