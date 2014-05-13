@@ -90,6 +90,8 @@ class sdbm(object):
                                             size=(n_units[layer_i-1],n_units[layer_i])))
         else:
             self.weights = weights
+        self.vw = list_zeros_like(self.weights)
+
         if bias is None:
             self.bias = []
             for layer_i in range(len(n_units)):
@@ -99,6 +101,7 @@ class sdbm(object):
                 self.bias.append(np.zeros(n_units[layer_i]))
         else:
             self.bias = bias
+        self.vb = list_zeros_like(self.bias)
         if state is None:
             self.state = []
             for layer_i in range(len(n_units)):
@@ -578,7 +581,7 @@ class sdbm(object):
         else:
             raise ValueError
 
-    def muTrain(self,vis,steps,eps,meanSteps):
+    def muTrain(self,vis,steps,eps,meanSteps,alpha,beta):
         """Adjust weights/biases of the network to minimize probability flow, K via
         gradient descent.
 
@@ -616,8 +619,9 @@ class sdbm(object):
                 diffe = (1.-2.*muStates[layer_i])*diffe
                 
                 # Bias update
-                dkdbl = 0.5*(1.-2.*muStates[layer_i])*np.exp(.5*diffe).sum(0)
-                self.bias[layer_i] -= eps*dkdbl/float(nData)
+                dkdbl = 0.5*((1.-2.*muStates[layer_i])*np.exp(.5*diffe)).sum(0)
+                #self.vb[layer_i] = alpha*self.vb[layer_i]-eps*dkdbl/float(nData)
+                self.bias[layer_i] += -eps*dkdbl/float(nData)#self.vb[layer_i]#-beta*self.bias[layer_i]
 
                 # Weights update
                 # All layers except top
@@ -625,7 +629,8 @@ class sdbm(object):
                     dkdw[layer_i] += .5*(1.-2.*muStates[layer_i]).T.dot(muStates[layer_i+1]*diffe)
                 # All layers except bottom (visible)
                 if layer_i > 0:
-                    dkdw[layer_i-1] += .5*muStates[layer_i-1].T.dot((1.-2*muStates[layer_1])*diffe)
+                    dkdw[layer_i-1] += .5*muStates[layer_i-1].T.dot((1.-2*muStates[layer_i])*diffe)
 
             for layer_i in xrange(self.n_layers-1):
-                self.weights[layer_i] -= eps*dkdw[layer_i]/float(nData)
+                self.vw[layer_i] = alpha*self.vw[layer_i]-eps*dkdw[layer_i]/float(nData)
+                self.weights[layer_i] += -eps*dkdw[layer_i]/float(nData)#self.vw[layer_i]#-beta*self.weights[layer_i]
