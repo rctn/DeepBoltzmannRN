@@ -67,7 +67,7 @@ def gradFlow(params,*args):
     num += n_visible
     biash = params[num:num+n_hidden]
     dkdw,dkdbv,dkdbh = iterde(weights,biasv,biash,data,n_visible)
-    return .5*eps*np.concatenate((dkdw.flatten(),dkdbv,dkdbh))/n_data
+    return .5*eps*np.concatenate((dkdw.ravel(),dkdbv,dkdbh))/n_data
 
 @autojit
 def iterde(weights,biasv,biash,data,n_visible):
@@ -124,12 +124,15 @@ class preRBM(object):
         self.weights = rng.uniform(low=-4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
                                    high=4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
                                    size=(self.n_visible,self.n_hidden))
-        self.biasv = rng.uniform(low=-4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
+        self.biasv = 0.*rng.uniform(low=-4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
                                    high=4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
                                    size=self.n_visible)
-        self.biash = rng.uniform(low=-4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
+        self.biash = 0.*rng.uniform(low=-4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
                                    high=4.*np.sqrt(6./(self.n_visible+self.n_hidden)),
                                    size=self.n_hidden)
+        self.vw = 0.
+        self.vbv = 0.
+        self.vbh = 0.
         self.constrainWeights()
     
     def constrainWeights(self):
@@ -157,13 +160,8 @@ class preRBM(object):
             states = np.tile(data,(1,2))
         else:
             states = data
-        params = np.concatenate((self.weights.flatten(),self.biasv,self.biash))
-        print('K pre: '+str(flow(params,eps,states,self.n_visible,self.n_hidden)))
-        print('gradK pre: '+str(gradFlow(params,eps,states,self.n_visible,self.n_hidden)))
+        params = np.concatenate((self.weights.ravel(),self.biasv,self.biash))
         params,f,d = bfgs(flow,params,fprime=gradFlow,args=(eps,states,self.n_visible,self.n_hidden),iprint=0,maxiter = nIter)
-        print(d['warnflag'])
-        print('K post: '+str(f))
-        print('gradK post: '+str(d['grad']))
         num = self.n_visible*self.n_hidden
         self.weights = params[:num].reshape(self.n_visible,self.n_hidden)
         self.biasv = params[num:num+self.n_visible]
@@ -186,7 +184,7 @@ class preRBM(object):
             raise ValueError
         return (weights,biasv,biash)
 
-    def trainStep(self,eps,data,steps):
+    def trainStep(self,eps,data,steps,alpha):
         if self.layer == 'bottom':
             states = np.tile(data,(1,2))
         else:
@@ -195,20 +193,32 @@ class preRBM(object):
         dkdbv = np.zeros_like(self.biasv)
         dkdbh = np.zeros_like(self.biash)
         n_data = data.shape[0]
-        params = np.concatenate((self.weights.flatten(),self.biasv,self.biash))
-        print('K pre: '+str(flow(params,eps,states,self.n_visible,self.n_hidden)))
+        params = np.concatenate((self.weights.ravel(),self.biasv,self.biash))
         for jj in xrange(steps):
+            energy = -data.dot(self.biasv)-np.sum(np.log(1.+np.exp(self.biash+data.dot(self.weights))),axis=1)
             for ii in xrange(self.n_visible):
-	        diffe = np.exp(.5*energyDiff(self.weights,self.biasv,self.biash,states,ii))
-                dkdw += np.einsum('ijk,i->jk',dedwDiff(self.weights,self.biash,states,ii),diffe)
-                #dkdbv += np.einsum('ij,i->j',dedbvDiff(data,ii),diffe)
-                dkdbv[ii] += np.dot(1.+2*states[:,ii],diffe)
-                dkdbh += np.einsum('ij,i->j',dedbhDiff(self.weights,self.biash,states,ii),diffe)
-            self.weights -= eps*dkdw/float(n_data)
-            self.biasv -= .5*eps*dkdbv/float(n_data)
-            self.biash -= .5*eps*dkdbh/float(n_data)
-        params = np.concatenate((self.weights.flatten(),self.biasv,self.biash))
-        print('K post: '+str(flow(params,eps,states,self.n_visible,self.n_hidden)))
+                flip = data.copy()
+                flip[:,ii] = 1.-flip[:,ii]
+                terms = self.biash+data.dot(self.weights)
+                sig_terms = sigm(terms)
+                termsBF = self.biash+flip.dot(self.weights)
+                sig_termsBF = sigm(termsBF)
+                logTermsBF = np.sum(np.log(1.+np.exp(termsBF)),axis=1)
+
+                diffe = np.exp(.5*(energy-(-flip[:,ii]*self.biasv[ii]-logTermsBF)))
+
+                dkdw += data.T.dot(-sig_terms*diffe[:,np.newaxis])-flip.T.dot(-sig_termsBF*diffe[:,np.newaxis])
+
+                dkdbv[ii] += np.dot(1.-2.*data[:,ii],diffe)
+
+                dkdbh += diffe.dot(-sig_terms-(-sig_termsBF))
+            self.vw = alpha*self.vw-eps*dkdw/float(n_data)
+            self.weights += self.vw
+            self.vbv = alpha*self.vbv-eps*dkdbv/float(n_data)
+            self.biasv += self.vbv
+            self.vbh = alpha*self.vbh-eps*dkdbh/float(n_data)
+            self.biash += self.vbh
+        params = np.concatenate((self.weights.ravel(),self.biasv,self.biash))
 
         self.constrainWeights()
         if self.layer == 'bottom':
