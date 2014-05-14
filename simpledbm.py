@@ -110,7 +110,8 @@ class sdbm(object):
         self.meanState = None
         self.n_layers = len(n_units)
         self.n_units = n_units
-        self.temperature = 1.
+        self.dkdbl = list_zeros_like(self.bias)
+        self.dkdwl = list_zeros_like(self.weights)
 
     def sigm(self,x,sample=False):
         """Sigmoid function
@@ -185,25 +186,7 @@ class sdbm(object):
         # observed data)
         # Find meanfield estimates
         muStates = self.ExHidden(vis,meanSteps,sample=False)
-        ####
-        # meanHStates = muStates.mean(0)[1:]
-        # tmask = (meanHStates > .9) + (meanHStates < .1)
-        # tmask = np.tile(tmask,(nData,1))
-        # tmask = (self.rng.uniform(size=tmask.shape) < .1) * tmask
 
-        # hstemp = muStates[:,1,:]
-        # hstemp[tmask] = 0.5
-        # muStates[:,1,:] = hstemp
-
-        # tmask = tmask.ravel()
-        # reset = ((self.rng.uniform(size=(muStates.shape[0], tmask.shape[0])) < 0.1) & tmask.reshape((1,-1))).ravel()
-        # fullStatesShape = muStates.shape
-        # muStates = muStates.reshape((-1,))
-
-        # muStates[reset] = 0.7
-        # muStates = muStates.reshape((fullStatesShape))
-
-        ###
         for ii in xrange(steps):
             dkdw = list_zeros_like(self.weights)
             for layer_i in xrange(self.n_layers):
@@ -259,27 +242,10 @@ class sdbm(object):
         # Propagate visible data up the network (hopefully hidden states can be considered
         # observed data)
         # Find meanfield estimates
-        dataStates = self.ExHidden(vis,meanSteps,sample=False)
-        nondataStates = self.ExFull(vis,meanSteps,sample=True)
-        ####
-        # meanHStates = muStates.mean(0)[1:]
-        # tmask = (meanHStates > .9) + (meanHStates < .1)
-        # tmask = np.tile(tmask,(nData,1))
-        # tmask = (self.rng.uniform(size=tmask.shape) < .1) * tmask
+        dataStates = self.ExHidden(vis,meanSteps,sample=True)
+        nondataStates = self.ExFull(vis,meanSteps,sample=False)
+        nondataStates = self.ExHidden(nondataStates[0],1,sample=False)
 
-        # hstemp = muStates[:,1,:]
-        # hstemp[tmask] = 0.5
-        # muStates[:,1,:] = hstemp
-
-        # tmask = tmask.ravel()
-        # reset = ((self.rng.uniform(size=(muStates.shape[0], tmask.shape[0])) < 0.1) & tmask.reshape((1,-1))).ravel()
-        # fullStatesShape = muStates.shape
-        # muStates = muStates.reshape((-1,))
-
-        # muStates[reset] = 0.7
-        # muStates = muStates.reshape((fullStatesShape))
-
-        ###
         for ii in xrange(steps):
             dataE = 0.
             nondataE = 0.
@@ -297,6 +263,45 @@ class sdbm(object):
                 if layer_i < (self.n_layers-1):
                     dkdwl = .5*(-np.einsum('ij,ik,i->jk',dataStates[layer_i],dataStates[layer_i+1],expdiffe) + np.einsum('ij,ik,i->jk',nondataStates[layer_i],nondataStates[layer_i+1],expdiffe))
                     self.weights[layer_i] -= eps*dkdwl/float(nData)
+
+    def CDTrain(self,vis,steps,eps,meanSteps,momentum=0.,weightcost=0.):
+        """Adjust weights/biases of the network to maximize likelihood using Contrastive divergence
+        training.
+
+        Parameters
+        ----------
+        vis : array-like, shape (n_data, n_units)
+            Dataset to train on
+
+        steps : int
+            Number of iterations to run MPF (parameter updates)
+
+        eps : float
+            Learning rate
+
+        meanSteps : int
+            Number of mean-field cycles per layer
+
+        momentum : float, optional
+            Momentum factor between 0. and 1.
+
+        weightcost : float, optional
+            Weight decay penalty
+        """
+        nData = vis.shape[0]
+
+        dataStates = self.ExHidden(vis,meanSteps,sample=False)
+        nondataStates = self.ExFull(vis,meanSteps,sample=False)
+        nondataStates = self.ExHidden(nondataStates[0],1,sample=False)
+
+        for ii in xrange(steps):
+            for layer_i in xrange(self.n_layers):
+                self.dkdbl[layer_i] = momentum*self.dkdbl[layer_i] + (-dataStates[layer_i]+nondataStates[layer_i]).sum(0)
+                self.bias[layer_i] -= eps*self.dkdbl[layer_i]/float(nData)
+                if layer_i < (self.n_layers-1):
+                    self.dkdwl[layer_i] = momentum*self.dkdwl[layer_i] + (-np.einsum('ij,ik->jk',dataStates[layer_i],dataStates[layer_i+1]) + np.einsum('ij,ik->jk',nondataStates[layer_i],nondataStates[layer_i+1]))
+                    self.dkdwl[layer_i] -= weightcost*self.weights[layer_i]
+                    self.weights[layer_i] -= eps*self.dkdwl[layer_i]/float(nData)
 
     def ExHidden(self,vis,meanSteps,sample=False):
         """Finds the expectation for hidden units using mean-field variational approach
@@ -555,26 +560,3 @@ class sdbm(object):
 
         average_p_v /= n_samples*vis.shape[0]
         return average_p_v
-
-    def getWeights(self):
-        return self.weights
-    def getBiases(self):
-        return self.bias
-    def getState(self):
-        return self.state
-    def setWeights(self,weights):
-        if self.weights.shape == weights.shape:
-            self.weights = weights
-        else:
-            raise ValueError
-    def setBiases(self,bias):
-        if self.bias.shape == bias.shape:
-            self.bias = bias
-        else:
-            raise ValueError
-    def setState(self,state):
-        if self.state.shape == state.shape:
-            self.state = state
-        else:
-            raise ValueError
-
